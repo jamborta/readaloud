@@ -201,41 +201,65 @@ class BookReader {
 
     async renderEPUB(container) {
         try {
-            // Check if epub.js is loaded
-            if (typeof ePub === 'undefined') {
-                container.innerHTML = '<p>EPUB library not loaded. Please refresh the page.</p>';
+            // Check if JSZip is loaded
+            if (typeof JSZip === 'undefined') {
+                container.innerHTML = '<p>JSZip library not loaded. Please refresh the page.</p>';
                 return;
             }
 
             const uint8Array = new Uint8Array(this.book.fileData);
 
-            // Load the EPUB using epub.js with ArrayBuffer
-            const book = ePub(uint8Array.buffer);
+            // Load the EPUB as a ZIP file using JSZip
+            const zip = await JSZip.loadAsync(uint8Array);
 
-            // Get all text content from the book
-            await book.ready;
+            // Find the container.xml file to get the content.opf location
+            const containerXml = await zip.file('META-INF/container.xml').async('text');
+            const parser = new DOMParser();
+            const containerDoc = parser.parseFromString(containerXml, 'text/xml');
+            const rootfilePath = containerDoc.querySelector('rootfile').getAttribute('full-path');
 
-            const spine = await book.loaded.spine;
+            // Load the content.opf file
+            const contentOpf = await zip.file(rootfilePath).async('text');
+            const opfDoc = parser.parseFromString(contentOpf, 'text/xml');
+
+            // Get the spine (reading order)
+            const spineItems = opfDoc.querySelectorAll('spine itemref');
+            const manifest = {};
+
+            // Build manifest map
+            opfDoc.querySelectorAll('manifest item').forEach(item => {
+                manifest[item.getAttribute('id')] = item.getAttribute('href');
+            });
+
+            // Get the base path for content files
+            const basePath = rootfilePath.substring(0, rootfilePath.lastIndexOf('/') + 1);
+
             let allText = '';
 
-            // Extract text from each section
-            for (const item of spine.items) {
-                try {
-                    const section = await book.spine.get(item.href);
-                    const contents = await section.load(book.load.bind(book));
+            // Extract text from each spine item
+            for (const itemref of spineItems) {
+                const idref = itemref.getAttribute('idref');
+                const href = manifest[idref];
 
-                    const doc = contents.document || contents;
-                    if (doc && doc.body) {
-                        const text = this.extractTextFromElement(doc.body);
-                        allText += text;
+                if (href) {
+                    try {
+                        const contentPath = basePath + href;
+                        const contentFile = zip.file(contentPath);
+
+                        if (contentFile) {
+                            const content = await contentFile.async('text');
+                            const contentDoc = parser.parseFromString(content, 'text/html');
+
+                            if (contentDoc.body) {
+                                const text = this.extractTextFromElement(contentDoc.body);
+                                allText += text;
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('Error loading content file:', href, err);
                     }
-                } catch (err) {
-                    console.warn('Error loading section:', item.href, err);
                 }
             }
-
-            // Destroy the book to free resources
-            book.destroy();
 
             if (allText.trim().length > 0) {
                 container.innerHTML = allText;
