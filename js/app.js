@@ -6,6 +6,12 @@ async function init() {
     try {
         await storage.init();
         updateAuthUI();
+
+        // Sync books from backend if already logged in
+        if (ttsApi.isAuthenticated()) {
+            await storage.syncBooksFromBackend();
+        }
+
         await loadLibrary();
         setupEventListeners();
     } catch (error) {
@@ -124,6 +130,10 @@ function setupEventListeners() {
         try {
             await authManager.showAuthModal();
             updateAuthUI();
+
+            // Sync books from backend after login
+            await storage.syncBooksFromBackend();
+
             await loadLibrary(); // Reload to show synced books
         } catch (error) {
             console.error('Login failed:', error);

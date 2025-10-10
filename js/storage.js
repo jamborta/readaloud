@@ -80,6 +80,79 @@ class StorageManager {
         });
     }
 
+    // Sync books from backend
+    async syncBooksFromBackend() {
+        if (typeof ttsApi === 'undefined' || !ttsApi.isAuthenticated()) {
+            return; // Not authenticated, skip sync
+        }
+
+        try {
+            // Get books from backend
+            const backendBooks = await ttsApi.getBooks();
+            const localBooks = await this.getAllBooks();
+
+            // Create a map of local books by title+author for matching
+            const localBookMap = {};
+            localBooks.forEach(book => {
+                const key = `${book.title}_${book.author}`;
+                localBookMap[key] = book;
+            });
+
+            // Track which books from backend we found locally
+            const syncedBookIds = new Set();
+
+            // Check each backend book
+            for (const backendBook of backendBooks) {
+                const key = `${backendBook.title}_${backendBook.author}`;
+
+                if (localBookMap[key]) {
+                    // Book exists locally, mark it as synced
+                    syncedBookIds.add(localBookMap[key].id);
+                } else {
+                    // Book exists in backend but not locally
+                    // Create a placeholder entry (user needs to re-upload the file)
+                    console.log(`Book "${backendBook.title}" is in your cloud library but not on this device. Please re-upload the file.`);
+                }
+            }
+
+            // Mark local books that aren't synced yet
+            const tx = this.db.transaction(['books'], 'readwrite');
+            const store = tx.objectStore('books');
+
+            for (const localBook of localBooks) {
+                const key = `${localBook.title}_${localBook.author}`;
+                const backendBook = backendBooks.find(b => `${b.title}_${b.author}` === key);
+
+                if (backendBook && !localBook.syncedToBackend) {
+                    // Update local book to mark as synced
+                    localBook.syncedToBackend = true;
+                    localBook.backendId = backendBook.id;
+                    store.put(localBook);
+                } else if (!backendBook && !localBook.syncedToBackend) {
+                    // Local book not in backend, upload it
+                    try {
+                        const result = await ttsApi.saveBook({
+                            title: localBook.title,
+                            author: localBook.author,
+                            fileType: localBook.fileType,
+                            uploadedAt: localBook.addedDate
+                        });
+                        localBook.syncedToBackend = true;
+                        localBook.backendId = result.id;
+                        store.put(localBook);
+                    } catch (error) {
+                        console.error('Failed to sync book to backend:', error);
+                    }
+                }
+            }
+
+            await tx.complete;
+            console.log('Book sync completed');
+        } catch (error) {
+            console.error('Failed to sync books from backend:', error);
+        }
+    }
+
     // Get a specific book by ID
     async getBook(id) {
         const tx = this.db.transaction(['books'], 'readonly');
@@ -94,14 +167,27 @@ class StorageManager {
 
     // Delete a book
     async deleteBook(id) {
+        // Get the book first to check if it's synced
+        const book = await this.getBook(id);
+
         const tx = this.db.transaction(['books'], 'readwrite');
         const store = tx.objectStore('books');
 
         return new Promise((resolve, reject) => {
             const request = store.delete(id);
-            request.onsuccess = () => {
+            request.onsuccess = async () => {
                 // Also delete related reading position
                 this.deleteReadingPosition(id);
+
+                // Delete from backend if synced
+                if (book && book.backendId && typeof ttsApi !== 'undefined' && ttsApi.isAuthenticated()) {
+                    try {
+                        await ttsApi.deleteBook(book.backendId);
+                    } catch (error) {
+                        console.error('Failed to delete book from backend:', error);
+                    }
+                }
+
                 resolve();
             };
             request.onerror = () => reject(request.error);
