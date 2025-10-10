@@ -124,6 +124,12 @@ class BookReader {
                 voiceSelect.innerHTML = this.voices.map(voice => {
                     return `<option value="${voice.id}">${voice.name}</option>`;
                 }).join('');
+
+                // Restore saved voice selection after populating options
+                const settings = storage.getSettings();
+                if (settings.voiceId) {
+                    voiceSelect.value = settings.voiceId;
+                }
             }
         } catch (error) {
             console.error('Failed to load voices:', error);
