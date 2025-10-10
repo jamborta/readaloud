@@ -3,7 +3,7 @@
  */
 
 // IMPORTANT: Update this URL after deploying your Cloudflare Worker
-const WORKER_URL = 'https://readaloud-tts-worker.YOUR_SUBDOMAIN.workers.dev';
+const WORKER_URL = 'https://readaloud-tts-worker.jamborta.workers.dev';
 
 class TTSApiClient {
     constructor() {
