@@ -1,18 +1,111 @@
 /**
- * API Client for communicating with Cloudflare Worker
+ * API Client for communicating with FastAPI Backend
  */
 
-// IMPORTANT: Update this URL after deploying your Cloudflare Worker
-const WORKER_URL = 'https://readaloud-tts-worker.jamborta.workers.dev';
+// IMPORTANT: Update this URL after deploying your FastAPI backend
+const API_URL = 'https://readaloud-backend-63970619665.us-central1.run.app';
 
 class TTSApiClient {
     constructor() {
-        this.workerUrl = WORKER_URL;
+        this.apiUrl = API_URL;
         this.isOnline = navigator.onLine;
+        this.token = localStorage.getItem('auth_token');
 
         // Listen for online/offline events
         window.addEventListener('online', () => this.isOnline = true);
         window.addEventListener('offline', () => this.isOnline = false);
+    }
+
+    /**
+     * Check if user is authenticated
+     */
+    isAuthenticated() {
+        return !!this.token;
+    }
+
+    /**
+     * Register a new user
+     */
+    async register(username, password) {
+        if (!this.isOnline) {
+            throw new Error('No internet connection');
+        }
+
+        try {
+            const response = await fetch(`${this.apiUrl}/api/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username, password })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Registration failed');
+            }
+
+            const data = await response.json();
+            this.token = data.access_token;
+            localStorage.setItem('auth_token', this.token);
+            return data;
+        } catch (error) {
+            console.error('Registration failed:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Login with existing credentials
+     */
+    async login(username, password) {
+        if (!this.isOnline) {
+            throw new Error('No internet connection');
+        }
+
+        try {
+            const response = await fetch(`${this.apiUrl}/api/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username, password })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Login failed');
+            }
+
+            const data = await response.json();
+            this.token = data.access_token;
+            localStorage.setItem('auth_token', this.token);
+            return data;
+        } catch (error) {
+            console.error('Login failed:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Logout and clear token
+     */
+    logout() {
+        this.token = null;
+        localStorage.removeItem('auth_token');
+    }
+
+    /**
+     * Get authorization headers
+     */
+    getAuthHeaders() {
+        if (!this.token) {
+            throw new Error('Not authenticated');
+        }
+        return {
+            'Authorization': `Bearer ${this.token}`,
+            'Content-Type': 'application/json'
+        };
     }
 
     /**
@@ -24,7 +117,7 @@ class TTSApiClient {
         }
 
         try {
-            const response = await fetch(`${this.workerUrl}/api/health`, {
+            const response = await fetch(`${this.apiUrl}/api/health`, {
                 method: 'GET'
             });
 
@@ -47,12 +140,21 @@ class TTSApiClient {
             throw new Error('No internet connection');
         }
 
+        if (!this.isAuthenticated()) {
+            throw new Error('Please login to access voices');
+        }
+
         try {
-            const response = await fetch(`${this.workerUrl}/api/voices`, {
-                method: 'GET'
+            const response = await fetch(`${this.apiUrl}/api/voices`, {
+                method: 'GET',
+                headers: this.getAuthHeaders()
             });
 
             if (!response.ok) {
+                if (response.status === 401) {
+                    this.logout();
+                    throw new Error('Session expired. Please login again.');
+                }
                 throw new Error('Failed to fetch voices');
             }
 
@@ -77,16 +179,18 @@ class TTSApiClient {
             throw new Error('No internet connection. Text-to-speech requires internet access.');
         }
 
+        if (!this.isAuthenticated()) {
+            throw new Error('Please login to use text-to-speech');
+        }
+
         if (!text || text.trim().length === 0) {
             throw new Error('Text cannot be empty');
         }
 
         try {
-            const response = await fetch(`${this.workerUrl}/api/synthesize`, {
+            const response = await fetch(`${this.apiUrl}/api/synthesize`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: this.getAuthHeaders(),
                 body: JSON.stringify({
                     text: text.trim(),
                     voiceId,
@@ -96,8 +200,12 @@ class TTSApiClient {
             });
 
             if (!response.ok) {
+                if (response.status === 401) {
+                    this.logout();
+                    throw new Error('Session expired. Please login again.');
+                }
                 const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to synthesize speech');
+                throw new Error(errorData.detail || 'Failed to synthesize speech');
             }
 
             const data = await response.json();
@@ -120,10 +228,10 @@ class TTSApiClient {
     }
 
     /**
-     * Check if worker URL is configured
+     * Check if API URL is configured
      */
     isConfigured() {
-        return this.workerUrl !== 'https://readaloud-tts-worker.YOUR_SUBDOMAIN.workers.dev';
+        return this.apiUrl !== 'https://your-api-url.com';
     }
 }
 
