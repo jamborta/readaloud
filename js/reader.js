@@ -201,40 +201,83 @@ class BookReader {
 
     async renderEPUB(container) {
         try {
+            // Check if epub.js is loaded
+            if (typeof ePub === 'undefined') {
+                container.innerHTML = '<p>EPUB library not loaded. Please refresh the page.</p>';
+                return;
+            }
+
             const uint8Array = new Uint8Array(this.book.fileData);
-            const text = new TextDecoder('utf-8').decode(uint8Array);
-            const bodyMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/gi);
 
-            if (bodyMatch && bodyMatch.length > 0) {
-                let content = bodyMatch.join('\n');
-                content = content.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
-                content = content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+            // Create blob from the EPUB data
+            const blob = new Blob([uint8Array], { type: 'application/epub+zip' });
+            const url = URL.createObjectURL(blob);
 
-                const paraMatches = content.match(/<p[^>]*>[\s\S]*?<\/p>/gi);
+            // Load the EPUB using epub.js
+            const book = ePub(url);
 
-                if (paraMatches) {
-                    container.innerHTML = paraMatches.map(p => {
-                        let cleaned = p.replace(/<[^>]+>/g, '');
-                        cleaned = cleaned.replace(/&nbsp;/g, ' ');
-                        cleaned = cleaned.replace(/&amp;/g, '&');
-                        cleaned = cleaned.replace(/&lt;/g, '<');
-                        cleaned = cleaned.replace(/&gt;/g, '>');
-                        cleaned = cleaned.replace(/&quot;/g, '"');
-                        cleaned = cleaned.trim();
-                        return cleaned ? `<p>${cleaned}</p>` : '';
-                    }).join('');
-                } else {
-                    const textContent = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-                    const paragraphs = textContent.split(/\n\n+/).filter(p => p.trim());
-                    container.innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
+            // Get all text content from the book
+            await book.ready;
+
+            const spine = await book.spine;
+            let allText = '';
+
+            // Extract text from each section
+            for (let i = 0; i < spine.items.length; i++) {
+                const section = spine.get(i);
+                await section.load(book.load.bind(book));
+
+                const doc = section.document;
+                if (doc && doc.body) {
+                    const text = this.extractTextFromElement(doc.body);
+                    allText += text;
                 }
+            }
+
+            // Clean up the blob URL
+            URL.revokeObjectURL(url);
+
+            if (allText.trim().length > 0) {
+                container.innerHTML = allText;
             } else {
                 container.innerHTML = '<p>Could not extract text from this EPUB file.</p>';
             }
         } catch (error) {
             console.error('Error rendering EPUB:', error);
-            container.innerHTML = '<p>Error loading EPUB. Please try a different file.</p>';
+            container.innerHTML = `<p>Error loading EPUB: ${error.message}. Please try a different file.</p>`;
         }
+    }
+
+    extractTextFromElement(element) {
+        let html = '';
+
+        // Process all paragraph elements
+        const paragraphs = element.querySelectorAll('p, h1, h2, h3, h4, h5, h6');
+
+        if (paragraphs.length > 0) {
+            paragraphs.forEach(p => {
+                const text = p.textContent.trim();
+                if (text.length > 0) {
+                    html += `<p>${this.escapeHtml(text)}</p>`;
+                }
+            });
+        } else {
+            // Fallback: extract all text and split by line breaks
+            const text = element.textContent || '';
+            const lines = text.split('\n').filter(line => line.trim().length > 20);
+
+            lines.forEach(line => {
+                html += `<p>${this.escapeHtml(line.trim())}</p>`;
+            });
+        }
+
+        return html;
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     togglePlayPause() {
