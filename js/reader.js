@@ -15,7 +15,7 @@ class BookReader {
     async init() {
         // Check if API is configured
         if (!ttsApi.isConfigured()) {
-            alert('TTS API is not configured. Please update the WORKER_URL in js/api.js');
+            alert('TTS API is not configured. Please update the API_URL in js/api.js');
         }
 
         // Get book ID from URL
@@ -40,12 +40,24 @@ class BookReader {
 
         // Setup UI
         this.setupUI();
-        await this.loadVoices();
         this.loadSettings();
         await this.renderBook();
         this.loadReadingPosition();
         this.setupEventListeners();
         this.updateUsageDisplay();
+
+        // Load voices if authenticated, otherwise show placeholder
+        if (ttsApi.isAuthenticated()) {
+            try {
+                await this.loadVoices();
+            } catch (error) {
+                console.error('Failed to load voices:', error);
+                document.getElementById('voice-select').innerHTML = '<option>Login to load voices</option>';
+            }
+        } else {
+            // Not authenticated - show friendly message
+            document.getElementById('voice-select').innerHTML = '<option>Login to load voices</option>';
+        }
     }
 
     setupUI() {
@@ -115,7 +127,12 @@ class BookReader {
             }
         } catch (error) {
             console.error('Failed to load voices:', error);
-            alert('Failed to load voices. Please check your internet connection and API configuration.');
+            if (error.message.includes('login')) {
+                // Will be prompted to login when trying to play
+                document.getElementById('voice-select').innerHTML = '<option>Login to load voices</option>';
+            } else {
+                alert('Failed to load voices. Please check your internet connection and API configuration.');
+            }
         }
     }
 
@@ -315,6 +332,18 @@ class BookReader {
     async play() {
         if (this.currentParagraphs.length === 0) return;
         if (this.isLoadingAudio) return;
+
+        // Check authentication
+        if (!ttsApi.isAuthenticated()) {
+            try {
+                await authManager.requireAuth();
+                // Reload voices after authentication
+                await this.loadVoices();
+            } catch (error) {
+                console.error('Authentication failed:', error);
+                return;
+            }
+        }
 
         this.isPlaying = true;
         document.getElementById('play-pause').textContent = '⏸';
