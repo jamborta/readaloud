@@ -5,12 +5,50 @@ let books = [];
 async function init() {
     try {
         await storage.init();
+        updateAuthUI();
         await loadLibrary();
         setupEventListeners();
     } catch (error) {
         console.error('Failed to initialize app:', error);
         alert('Failed to initialize the application. Please refresh the page.');
     }
+}
+
+// Update auth UI based on login status
+function updateAuthUI() {
+    const loginBtn = document.getElementById('login-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+    const usernameDisplay = document.getElementById('username-display');
+
+    if (ttsApi.isAuthenticated()) {
+        // User is logged in
+        const token = localStorage.getItem('auth_token');
+        try {
+            // Decode JWT to get username (basic decode, not verified)
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const username = payload.sub;
+
+            loginBtn.style.display = 'none';
+            usernameDisplay.textContent = `👤 ${username}`;
+            usernameDisplay.style.display = 'inline-block';
+            logoutBtn.style.display = 'inline-block';
+        } catch (error) {
+            console.error('Failed to decode token:', error);
+            showLoginButton();
+        }
+    } else {
+        showLoginButton();
+    }
+}
+
+function showLoginButton() {
+    const loginBtn = document.getElementById('login-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+    const usernameDisplay = document.getElementById('username-display');
+
+    loginBtn.style.display = 'inline-block';
+    usernameDisplay.style.display = 'none';
+    logoutBtn.style.display = 'none';
 }
 
 // Load all books from storage
@@ -77,6 +115,24 @@ function createBookCard(book) {
 function setupEventListeners() {
     const fileInput = document.getElementById('file-upload');
     fileInput.addEventListener('change', handleFileUpload);
+
+    // Auth buttons
+    const loginBtn = document.getElementById('login-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+
+    loginBtn.addEventListener('click', async () => {
+        try {
+            await authManager.showAuthModal();
+            updateAuthUI();
+            await loadLibrary(); // Reload to show synced books
+        } catch (error) {
+            console.error('Login failed:', error);
+        }
+    });
+
+    logoutBtn.addEventListener('click', () => {
+        authManager.logout();
+    });
 }
 
 // Handle file upload
