@@ -240,7 +240,7 @@ class StorageManager {
     }
 
     // Save reading position to localStorage
-    saveReadingPosition(bookId, position) {
+    async saveReadingPosition(bookId, position) {
         const positions = this.getAllReadingPositions();
         positions[bookId] = {
             ...position,
@@ -248,15 +248,20 @@ class StorageManager {
         };
         localStorage.setItem('readingPositions', JSON.stringify(positions));
 
-        // Sync to backend
+        // Sync to backend using backend book ID
         if (typeof ttsApi !== 'undefined' && ttsApi.isAuthenticated()) {
-            ttsApi.savePosition({
-                bookId,
-                paragraphIndex: position.paragraphIndex,
-                totalParagraphs: position.totalParagraphs
-            }).catch(error => {
+            try {
+                const book = await this.getBook(bookId);
+                if (book && book.backendId) {
+                    await ttsApi.savePosition({
+                        bookId: book.backendId,  // Use backend ID for sync
+                        paragraphIndex: position.paragraphIndex,
+                        totalParagraphs: position.totalParagraphs
+                    });
+                }
+            } catch (error) {
                 console.error('Failed to sync position to backend:', error);
-            });
+            }
         }
     }
 

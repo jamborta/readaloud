@@ -494,14 +494,15 @@ class BookReader {
     }
 
     async loadReadingPosition() {
-        // Try to get position from backend first
-        if (ttsApi.isAuthenticated()) {
+        // Try to get position from backend first using backend book ID
+        if (ttsApi.isAuthenticated() && this.book.backendId) {
             try {
-                const backendPosition = await ttsApi.getPosition(this.bookId);
+                const backendPosition = await ttsApi.getPosition(this.book.backendId);
                 if (backendPosition && backendPosition.paragraphIndex !== undefined) {
                     this.currentParagraphIndex = Math.min(backendPosition.paragraphIndex, this.currentParagraphs.length - 1);
                     this.highlightParagraph(this.currentParagraphIndex);
                     this.updateProgress();
+                    console.log(`✅ Loaded reading position from cloud: paragraph ${this.currentParagraphIndex}`);
                     return;
                 }
             } catch (error) {
