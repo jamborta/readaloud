@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 import hashlib
 import hmac
-from google.cloud import texttospeech
+from google.cloud import texttospeech, storage
 import firebase_admin
 from firebase_admin import credentials, firestore
 import base64
@@ -60,6 +60,22 @@ app.add_middleware(
 # Google Cloud TTS client
 tts_client = texttospeech.TextToSpeechClient()
 
+# Google Cloud Storage client
+storage_client = storage.Client()
+BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "readaloud-books")
+
+# Create bucket if it doesn't exist
+try:
+    bucket = storage_client.bucket(BUCKET_NAME)
+    if not bucket.exists():
+        bucket = storage_client.create_bucket(BUCKET_NAME, location="us-central1")
+        print(f"✅ Created Cloud Storage bucket: {BUCKET_NAME}")
+    else:
+        print(f"✅ Using existing Cloud Storage bucket: {BUCKET_NAME}")
+except Exception as e:
+    print(f"⚠️  Cloud Storage warning: {e}")
+    bucket = None
+
 
 # Models
 class UserRegister(BaseModel):
@@ -97,6 +113,7 @@ class BookMetadata(BaseModel):
     author: Optional[str] = None
     fileType: str  # 'epub' or 'pdf'
     uploadedAt: Optional[str] = None
+    fileData: Optional[str] = None  # Base64 encoded file data
 
 
 class ReadingPosition(BaseModel):
@@ -362,7 +379,7 @@ async def get_books(username: str = Depends(verify_token)):
 
 @app.post("/api/books")
 async def save_book(book: BookMetadata, username: str = Depends(verify_token)):
-    """Save book metadata"""
+    """Save book metadata and file data to Cloud Storage"""
     if not db:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -371,25 +388,118 @@ async def save_book(book: BookMetadata, username: str = Depends(verify_token)):
 
     books_ref = db.collection('users').document(username).collection('books')
 
-    book_data = book.dict()
+    book_data = book.dict(exclude={'fileData'})
     book_data['uploadedAt'] = datetime.now().isoformat()
 
-    # Add book and return the generated ID
+    # Store file in Cloud Storage if provided
+    if book.fileData and bucket:
+        try:
+            # Generate unique file path: users/{username}/books/{timestamp}_{title}.{ext}
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_title = "".join(c for c in book.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            file_path = f"users/{username}/books/{timestamp}_{safe_title}.{book.fileType}"
+
+            # Upload to Cloud Storage
+            blob = bucket.blob(file_path)
+
+            # Decode base64 and upload
+            file_bytes = base64.b64decode(book.fileData)
+            blob.upload_from_string(file_bytes, content_type=f"application/{book.fileType}")
+
+            # Store the Cloud Storage path in Firestore
+            book_data['storagePath'] = file_path
+            book_data['fileSize'] = len(file_bytes)
+
+            print(f"✅ Uploaded book to Cloud Storage: {file_path}")
+        except Exception as e:
+            print(f"⚠️  Failed to upload to Cloud Storage: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload book file: {str(e)}",
+            )
+
+    # Add book metadata to Firestore
     doc_ref = books_ref.add(book_data)
 
     return {"id": doc_ref[1].id, **book_data}
 
 
-@app.delete("/api/books/{book_id}")
-async def delete_book(book_id: str, username: str = Depends(verify_token)):
-    """Delete a book"""
+@app.get("/api/books/{book_id}/download")
+async def download_book(book_id: str, username: str = Depends(verify_token)):
+    """Download book file from Cloud Storage"""
     if not db:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database not available",
         )
 
+    # Get book metadata
     book_ref = db.collection('users').document(username).collection('books').document(book_id)
+    book_doc = book_ref.get()
+
+    if not book_doc.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+
+    book_data = book_doc.to_dict()
+    storage_path = book_data.get('storagePath')
+
+    if not storage_path or not bucket:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book file not found in storage",
+        )
+
+    try:
+        # Download from Cloud Storage
+        blob = bucket.blob(storage_path)
+        file_bytes = blob.download_as_bytes()
+
+        # Return as base64
+        file_base64 = base64.b64encode(file_bytes).decode('utf-8')
+
+        return {
+            "fileData": file_base64,
+            "title": book_data.get('title'),
+            "author": book_data.get('author'),
+            "fileType": book_data.get('fileType')
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download book: {str(e)}",
+        )
+
+
+@app.delete("/api/books/{book_id}")
+async def delete_book(book_id: str, username: str = Depends(verify_token)):
+    """Delete a book and its file from Cloud Storage"""
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    # Get book to find storage path
+    book_ref = db.collection('users').document(username).collection('books').document(book_id)
+    book_doc = book_ref.get()
+
+    if book_doc.exists:
+        book_data = book_doc.to_dict()
+        storage_path = book_data.get('storagePath')
+
+        # Delete from Cloud Storage
+        if storage_path and bucket:
+            try:
+                blob = bucket.blob(storage_path)
+                blob.delete()
+                print(f"✅ Deleted book from Cloud Storage: {storage_path}")
+            except Exception as e:
+                print(f"⚠️  Failed to delete from Cloud Storage: {e}")
+
+    # Delete from Firestore
     book_ref.delete()
 
     return {"status": "deleted", "id": book_id}

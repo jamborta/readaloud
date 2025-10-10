@@ -296,6 +296,39 @@ class TTSApiClient {
     }
 
     /**
+     * Download book file from backend
+     */
+    async downloadBook(bookId) {
+        if (!this.isOnline) {
+            throw new Error('No internet connection');
+        }
+
+        if (!this.isAuthenticated()) {
+            throw new Error('Please login to download books');
+        }
+
+        try {
+            const response = await fetch(`${this.apiUrl}/api/books/${bookId}/download`, {
+                method: 'GET',
+                headers: this.getAuthHeaders()
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    this.logout();
+                    throw new Error('Session expired. Please login again.');
+                }
+                throw new Error('Failed to download book');
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Failed to download book:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Delete book from backend
      */
     async deleteBook(bookId) {

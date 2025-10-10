@@ -48,16 +48,22 @@ class StorageManager {
         return new Promise((resolve, reject) => {
             const request = store.add(book);
             request.onsuccess = async () => {
-                // Sync metadata to backend (file stays local)
+                // Sync book (including file data) to backend
                 if (typeof ttsApi !== 'undefined' && ttsApi.isAuthenticated()) {
                     try {
-                        await ttsApi.saveBook({
+                        // Convert fileData array to base64
+                        const uint8Array = new Uint8Array(book.fileData);
+                        const base64Data = btoa(String.fromCharCode.apply(null, uint8Array));
+
+                        const result = await ttsApi.saveBook({
                             title: book.title,
                             author: book.author,
                             fileType: book.fileType,
-                            uploadedAt: book.addedDate
+                            uploadedAt: book.addedDate,
+                            fileData: base64Data
                         });
                         book.syncedToBackend = true;
+                        book.backendId = result.id;
                     } catch (error) {
                         console.error('Failed to sync book to backend:', error);
                     }
@@ -109,9 +115,38 @@ class StorageManager {
                     // Book exists locally, mark it as synced
                     syncedBookIds.add(localBookMap[key].id);
                 } else {
-                    // Book exists in backend but not locally
-                    // Create a placeholder entry (user needs to re-upload the file)
-                    console.log(`Book "${backendBook.title}" is in your cloud library but not on this device. Please re-upload the file.`);
+                    // Book exists in backend but not locally - download it!
+                    console.log(`Downloading book from cloud: "${backendBook.title}"`);
+                    try {
+                        const bookData = await ttsApi.downloadBook(backendBook.id);
+
+                        // Convert base64 to array
+                        const binaryString = atob(bookData.fileData);
+                        const bytes = new Uint8Array(binaryString.length);
+                        for (let i = 0; i < binaryString.length; i++) {
+                            bytes[i] = binaryString.charCodeAt(i);
+                        }
+
+                        // Add to local database
+                        const tx2 = this.db.transaction(['books'], 'readwrite');
+                        const store2 = tx2.objectStore('books');
+
+                        const newBook = {
+                            id: Date.now().toString() + Math.random(),
+                            title: bookData.title,
+                            author: bookData.author,
+                            fileType: bookData.fileType,
+                            fileData: Array.from(bytes),
+                            addedDate: new Date().toISOString(),
+                            syncedToBackend: true,
+                            backendId: backendBook.id
+                        };
+
+                        store2.add(newBook);
+                        console.log(`✅ Downloaded and restored book: "${backendBook.title}"`);
+                    } catch (error) {
+                        console.error(`Failed to download book "${backendBook.title}":`, error);
+                    }
                 }
             }
 
