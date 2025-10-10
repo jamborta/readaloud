@@ -10,7 +10,7 @@ const MAX_CHARS_PER_REQUEST = 5000;
 
 // CORS headers for frontend
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*', // Change to your GitHub Pages domain in production
+  'Access-Control-Allow-Origin': 'https://jamborta.github.io', // Only your domain
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
