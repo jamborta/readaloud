@@ -228,6 +228,163 @@ class TTSApiClient {
     }
 
     /**
+     * Get all books from backend
+     */
+    async getBooks() {
+        if (!this.isOnline) {
+            throw new Error('No internet connection');
+        }
+
+        if (!this.isAuthenticated()) {
+            throw new Error('Please login to sync books');
+        }
+
+        try {
+            const response = await fetch(`${this.apiUrl}/api/books`, {
+                method: 'GET',
+                headers: this.getAuthHeaders()
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    this.logout();
+                    throw new Error('Session expired. Please login again.');
+                }
+                throw new Error('Failed to fetch books');
+            }
+
+            const data = await response.json();
+            return data.books;
+        } catch (error) {
+            console.error('Failed to get books:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Save book metadata to backend
+     */
+    async saveBook(bookMetadata) {
+        if (!this.isOnline) {
+            throw new Error('No internet connection');
+        }
+
+        if (!this.isAuthenticated()) {
+            throw new Error('Please login to sync books');
+        }
+
+        try {
+            const response = await fetch(`${this.apiUrl}/api/books`, {
+                method: 'POST',
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify(bookMetadata)
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    this.logout();
+                    throw new Error('Session expired. Please login again.');
+                }
+                throw new Error('Failed to save book');
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Failed to save book:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete book from backend
+     */
+    async deleteBook(bookId) {
+        if (!this.isOnline) {
+            throw new Error('No internet connection');
+        }
+
+        if (!this.isAuthenticated()) {
+            throw new Error('Please login to sync books');
+        }
+
+        try {
+            const response = await fetch(`${this.apiUrl}/api/books/${bookId}`, {
+                method: 'DELETE',
+                headers: this.getAuthHeaders()
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    this.logout();
+                    throw new Error('Session expired. Please login again.');
+                }
+                throw new Error('Failed to delete book');
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Failed to delete book:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get reading position from backend
+     */
+    async getPosition(bookId) {
+        if (!this.isOnline) {
+            return null; // Offline, use local position
+        }
+
+        if (!this.isAuthenticated()) {
+            return null;
+        }
+
+        try {
+            const response = await fetch(`${this.apiUrl}/api/positions/${bookId}`, {
+                method: 'GET',
+                headers: this.getAuthHeaders()
+            });
+
+            if (!response.ok) {
+                return null;
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Failed to get position:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Save reading position to backend
+     */
+    async savePosition(position) {
+        if (!this.isOnline) {
+            return; // Will sync when online
+        }
+
+        if (!this.isAuthenticated()) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiUrl}/api/positions`, {
+                method: 'POST',
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify(position)
+            });
+
+            if (!response.ok) {
+                console.error('Failed to save position');
+            }
+        } catch (error) {
+            console.error('Failed to save position:', error);
+        }
+    }
+
+    /**
      * Check if API URL is configured
      */
     isConfigured() {

@@ -493,7 +493,23 @@ class BookReader {
         });
     }
 
-    loadReadingPosition() {
+    async loadReadingPosition() {
+        // Try to get position from backend first
+        if (ttsApi.isAuthenticated()) {
+            try {
+                const backendPosition = await ttsApi.getPosition(this.bookId);
+                if (backendPosition && backendPosition.paragraphIndex !== undefined) {
+                    this.currentParagraphIndex = Math.min(backendPosition.paragraphIndex, this.currentParagraphs.length - 1);
+                    this.highlightParagraph(this.currentParagraphIndex);
+                    this.updateProgress();
+                    return;
+                }
+            } catch (error) {
+                console.error('Failed to load position from backend:', error);
+            }
+        }
+
+        // Fallback to local position
         const position = storage.getReadingPosition(this.bookId);
         if (position && position.paragraphIndex !== undefined) {
             this.currentParagraphIndex = Math.min(position.paragraphIndex, this.currentParagraphs.length - 1);

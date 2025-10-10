@@ -41,12 +41,29 @@ class StorageManager {
             author: bookData.author || 'Unknown Author',
             fileType: bookData.fileType,
             fileData: bookData.fileData,
-            addedDate: new Date().toISOString()
+            addedDate: new Date().toISOString(),
+            syncedToBackend: false
         };
 
         return new Promise((resolve, reject) => {
             const request = store.add(book);
-            request.onsuccess = () => resolve(book);
+            request.onsuccess = async () => {
+                // Sync metadata to backend (file stays local)
+                if (typeof ttsApi !== 'undefined' && ttsApi.isAuthenticated()) {
+                    try {
+                        await ttsApi.saveBook({
+                            title: book.title,
+                            author: book.author,
+                            fileType: book.fileType,
+                            uploadedAt: book.addedDate
+                        });
+                        book.syncedToBackend = true;
+                    } catch (error) {
+                        console.error('Failed to sync book to backend:', error);
+                    }
+                }
+                resolve(book);
+            };
             request.onerror = () => reject(request.error);
         });
     }
@@ -99,6 +116,17 @@ class StorageManager {
             lastRead: new Date().toISOString()
         };
         localStorage.setItem('readingPositions', JSON.stringify(positions));
+
+        // Sync to backend
+        if (typeof ttsApi !== 'undefined' && ttsApi.isAuthenticated()) {
+            ttsApi.savePosition({
+                bookId,
+                paragraphIndex: position.paragraphIndex,
+                totalParagraphs: position.totalParagraphs
+            }).catch(error => {
+                console.error('Failed to sync position to backend:', error);
+            });
+        }
     }
 
     // Get reading position for a book
