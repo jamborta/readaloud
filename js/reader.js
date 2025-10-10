@@ -209,33 +209,33 @@ class BookReader {
 
             const uint8Array = new Uint8Array(this.book.fileData);
 
-            // Create blob from the EPUB data
-            const blob = new Blob([uint8Array], { type: 'application/epub+zip' });
-            const url = URL.createObjectURL(blob);
-
-            // Load the EPUB using epub.js
-            const book = ePub(url);
+            // Load the EPUB using epub.js with ArrayBuffer
+            const book = ePub(uint8Array.buffer);
 
             // Get all text content from the book
             await book.ready;
 
-            const spine = await book.spine;
+            const spine = await book.loaded.spine;
             let allText = '';
 
             // Extract text from each section
-            for (let i = 0; i < spine.items.length; i++) {
-                const section = spine.get(i);
-                await section.load(book.load.bind(book));
+            for (const item of spine.items) {
+                try {
+                    const section = await book.spine.get(item.href);
+                    const contents = await section.load(book.load.bind(book));
 
-                const doc = section.document;
-                if (doc && doc.body) {
-                    const text = this.extractTextFromElement(doc.body);
-                    allText += text;
+                    const doc = contents.document || contents;
+                    if (doc && doc.body) {
+                        const text = this.extractTextFromElement(doc.body);
+                        allText += text;
+                    }
+                } catch (err) {
+                    console.warn('Error loading section:', item.href, err);
                 }
             }
 
-            // Clean up the blob URL
-            URL.revokeObjectURL(url);
+            // Destroy the book to free resources
+            book.destroy();
 
             if (allText.trim().length > 0) {
                 container.innerHTML = allText;
