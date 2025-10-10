@@ -51,9 +51,17 @@ class StorageManager {
                 // Sync book (including file data) to backend
                 if (typeof ttsApi !== 'undefined' && ttsApi.isAuthenticated()) {
                     try {
-                        // Convert fileData array to base64
+                        // Convert fileData array to base64 (handle large files)
                         const uint8Array = new Uint8Array(book.fileData);
-                        const base64Data = btoa(String.fromCharCode.apply(null, uint8Array));
+                        let binary = '';
+                        const chunkSize = 8192;
+                        for (let i = 0; i < uint8Array.length; i += chunkSize) {
+                            const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+                            binary += String.fromCharCode.apply(null, chunk);
+                        }
+                        const base64Data = btoa(binary);
+
+                        console.log(`Uploading book "${book.title}" (${Math.round(base64Data.length / 1024)}KB)`);
 
                         const result = await ttsApi.saveBook({
                             title: book.title,
@@ -64,8 +72,10 @@ class StorageManager {
                         });
                         book.syncedToBackend = true;
                         book.backendId = result.id;
+                        console.log(`✅ Book uploaded successfully: "${book.title}"`);
                     } catch (error) {
                         console.error('Failed to sync book to backend:', error);
+                        alert(`Failed to upload "${book.title}" to cloud: ${error.message}`);
                     }
                 }
                 resolve(book);
