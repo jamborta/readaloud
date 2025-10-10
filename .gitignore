@@ -1,0 +1,14 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test books (optional - uncomment if you don't want to commit test files)
+# *.epub
+# *.pdf

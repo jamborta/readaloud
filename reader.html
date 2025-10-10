@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>ReadAloud - Reader</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="reader-body" data-theme="light" data-font-size="medium">
+    <div class="reader-container">
+        <header class="reader-header">
+            <button id="back-btn" class="icon-btn" title="Back to Library">← Library</button>
+            <h1 id="book-title" class="book-title">Loading...</h1>
+            <div class="header-controls">
+                <button id="font-size-btn" class="icon-btn" title="Font Size">Aa</button>
+                <button id="theme-btn" class="icon-btn" title="Theme">☀</button>
+            </div>
+        </header>
+
+        <div id="reader-content" class="reader-content">
+            <!-- Book content will be rendered here -->
+        </div>
+
+        <div class="tts-controls">
+            <div class="usage-info">
+                <span id="usage-display" class="usage-text">0 / 1M chars (0%)</span>
+            </div>
+
+            <div class="control-row main-controls">
+                <button id="prev-paragraph" class="control-btn" title="Previous paragraph">⏮</button>
+                <button id="play-pause" class="control-btn play-btn" title="Play/Pause">▶</button>
+                <button id="next-paragraph" class="control-btn" title="Next paragraph">⏭</button>
+            </div>
+
+            <div class="control-row settings-controls">
+                <div class="control-group">
+                    <label for="voice-select">Voice:</label>
+                    <select id="voice-select" class="voice-select">
+                        <option>Loading voices...</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="speed-select">Speed:</label>
+                    <select id="speed-select" class="speed-select">
+                        <option value="0.5">0.5x</option>
+                        <option value="0.75">0.75x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.25">1.25x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="1.75">1.75x</option>
+                        <option value="2">2x</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="pitch-select">Pitch:</label>
+                    <select id="pitch-select" class="pitch-select">
+                        <option value="-5">-5</option>
+                        <option value="-3">-3</option>
+                        <option value="-1">-1</option>
+                        <option value="0" selected>0</option>
+                        <option value="1">+1</option>
+                        <option value="3">+3</option>
+                        <option value="5">+5</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Libraries -->
+    <script src="libs/pdf.min.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/reader.js"></script>
+</body>
+</html>

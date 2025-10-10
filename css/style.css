@@ -1,0 +1,612 @@
+/* Global Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+    --primary-color: #4f46e5;
+    --primary-hover: #4338ca;
+    --text-color: #1f2937;
+    --text-light: #6b7280;
+    --bg-color: #f9fafb;
+    --card-bg: #ffffff;
+    --border-color: #e5e7eb;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Theme Support */
+body[data-theme="light"] {
+    --text-color: #1f2937;
+    --text-light: #6b7280;
+    --bg-color: #ffffff;
+    --card-bg: #f9fafb;
+    --border-color: #e5e7eb;
+}
+
+body[data-theme="sepia"] {
+    --text-color: #5c4a3a;
+    --text-light: #8b7355;
+    --bg-color: #f4ecd8;
+    --card-bg: #f9f3e6;
+    --border-color: #d9cdb3;
+}
+
+body[data-theme="dark"] {
+    --text-color: #e5e7eb;
+    --text-light: #9ca3af;
+    --bg-color: #111827;
+    --card-bg: #1f2937;
+    --border-color: #374151;
+}
+
+/* Font Size Support */
+body[data-font-size="small"] .reader-content {
+    font-size: 0.95rem;
+}
+
+body[data-font-size="medium"] .reader-content {
+    font-size: 1.1rem;
+}
+
+body[data-font-size="large"] .reader-content {
+    font-size: 1.3rem;
+}
+
+body[data-font-size="x-large"] .reader-content {
+    font-size: 1.5rem;
+}
+
+/* Library Page Styles */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 3rem;
+}
+
+header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.subtitle {
+    color: var(--text-light);
+    font-size: 1.1rem;
+}
+
+/* Upload Section */
+.upload-section {
+    text-align: center;
+    margin-bottom: 3rem;
+}
+
+.upload-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    background-color: var(--primary-color);
+    color: white;
+    padding: 1rem 2rem;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-size: 1.1rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    box-shadow: var(--shadow);
+    border: none;
+    min-height: 44px; /* iOS touch target */
+}
+
+.upload-btn:hover {
+    background-color: var(--primary-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.upload-icon {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.upload-hint {
+    margin-top: 0.75rem;
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+/* Library Grid */
+.library-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.book-card {
+    background: var(--card-bg);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    box-shadow: var(--shadow);
+    transition: all 0.2s;
+    cursor: pointer;
+    position: relative;
+}
+
+.book-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.book-cover {
+    width: 100%;
+    height: 250px;
+    background: linear-gradient(135deg, var(--primary-color), #8b5cf6);
+    border-radius: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 4rem;
+    margin-bottom: 0.75rem;
+}
+
+.book-info {
+    text-align: center;
+}
+
+.book-info h3 {
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.book-info p {
+    font-size: 0.85rem;
+    color: var(--text-light);
+}
+
+.delete-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 44px; /* iOS touch target */
+    height: 44px;
+    cursor: pointer;
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.book-card:hover .delete-btn {
+    opacity: 1;
+}
+
+.delete-btn:hover {
+    background: rgb(220, 38, 38);
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-light);
+}
+
+.empty-state.hidden {
+    display: none;
+}
+
+.empty-icon {
+    font-size: 5rem;
+    margin-bottom: 1rem;
+}
+
+.empty-state h2 {
+    margin-bottom: 0.5rem;
+    color: var(--text-color);
+}
+
+/* Reader Page Styles */
+.reader-body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+.reader-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding-bottom: 220px; /* Space for controls */
+}
+
+.reader-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    gap: 0.75rem;
+}
+
+.header-controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.book-title {
+    flex: 1;
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.icon-btn {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 0.6rem 1rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    min-height: 44px; /* iOS touch target */
+    min-width: 44px;
+}
+
+.icon-btn:hover {
+    background: var(--border-color);
+}
+
+.icon-btn:active {
+    transform: scale(0.95);
+}
+
+/* Reader Content */
+.reader-content {
+    padding: 2rem 1.5rem;
+    line-height: 1.8;
+    max-width: 700px;
+    margin: 0 auto;
+    transition: font-size 0.2s;
+}
+
+.reader-content p {
+    margin-bottom: 1.2rem;
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 0.375rem;
+    transition: background-color 0.2s;
+}
+
+.reader-content p:hover {
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+body[data-theme="dark"] .reader-content p:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.reader-content p.active-paragraph {
+    background-color: rgba(79, 70, 229, 0.1);
+    border-left: 3px solid var(--primary-color);
+    padding-left: 1rem;
+}
+
+/* TTS Controls */
+.tts-controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--card-bg);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+    padding: 1rem;
+    z-index: 200;
+}
+
+.usage-info {
+    text-align: center;
+    margin-bottom: 0.75rem;
+}
+
+.usage-text {
+    font-size: 0.85rem;
+    color: var(--text-light);
+}
+
+.control-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.main-controls {
+    margin-bottom: 1rem;
+}
+
+.settings-controls {
+    gap: 0.75rem;
+}
+
+.control-btn {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 52px; /* iOS touch target */
+    height: 52px;
+    cursor: pointer;
+    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: var(--shadow);
+}
+
+.control-btn:hover {
+    background: var(--primary-hover);
+    transform: scale(1.05);
+}
+
+.control-btn:active {
+    transform: scale(0.95);
+}
+
+.play-btn {
+    width: 64px; /* Larger for primary action */
+    height: 64px;
+    font-size: 1.5rem;
+}
+
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.control-group label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-color);
+    white-space: nowrap;
+}
+
+.speed-select,
+.pitch-select,
+.voice-select {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-size: 0.9rem;
+    cursor: pointer;
+    min-height: 44px; /* iOS touch target */
+}
+
+.voice-select {
+    max-width: 200px;
+}
+
+/* Progress Bar */
+.progress-bar {
+    width: 100%;
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    margin-top: 1rem;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--primary-color);
+    width: 0%;
+    transition: width 0.3s;
+}
+
+/* iPhone / Mobile Optimizations */
+@media (max-width: 768px) {
+    .container {
+        padding: 1rem;
+    }
+
+    header h1 {
+        font-size: 2rem;
+    }
+
+    .library-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 1rem;
+    }
+
+    .book-cover {
+        height: 200px;
+    }
+
+    .reader-container {
+        padding-bottom: 260px;
+    }
+
+    .reader-header {
+        padding: 0.75rem 1rem;
+    }
+
+    .book-title {
+        font-size: 0.95rem;
+    }
+
+    .icon-btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.9rem;
+    }
+
+    .reader-content {
+        padding: 1.5rem 1rem;
+    }
+
+    body[data-font-size="small"] .reader-content {
+        font-size: 0.9rem;
+    }
+
+    body[data-font-size="medium"] .reader-content {
+        font-size: 1rem;
+    }
+
+    body[data-font-size="large"] .reader-content {
+        font-size: 1.2rem;
+    }
+
+    body[data-font-size="x-large"] .reader-content {
+        font-size: 1.4rem;
+    }
+
+    .tts-controls {
+        padding: 0.75rem;
+    }
+
+    .settings-controls {
+        width: 100%;
+        justify-content: space-between;
+        gap: 0.5rem;
+    }
+
+    .control-group {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
+
+    .control-group label {
+        font-size: 0.75rem;
+    }
+
+    .speed-select,
+    .pitch-select,
+    .voice-select {
+        width: 100%;
+        font-size: 0.85rem;
+        padding: 0.4rem 0.6rem;
+    }
+
+    .voice-select {
+        max-width: none;
+    }
+
+    .control-btn {
+        width: 48px;
+        height: 48px;
+        font-size: 1.1rem;
+    }
+
+    .play-btn {
+        width: 60px;
+        height: 60px;
+        font-size: 1.4rem;
+    }
+}
+
+/* Extra small screens (iPhone SE, etc) */
+@media (max-width: 375px) {
+    .library-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    }
+
+    .settings-controls {
+        flex-direction: column;
+        width: 100%;
+        align-items: stretch;
+    }
+
+    .control-group {
+        width: 100%;
+    }
+
+    .speed-select,
+    .pitch-select,
+    .voice-select {
+        width: 100%;
+    }
+}
+
+/* Landscape orientation adjustments */
+@media (max-width: 896px) and (orientation: landscape) {
+    .reader-content {
+        padding: 1rem;
+    }
+
+    .tts-controls {
+        padding: 0.5rem;
+    }
+
+    .main-controls {
+        margin-bottom: 0.5rem;
+    }
+
+    .usage-info {
+        margin-bottom: 0.5rem;
+    }
+
+    .progress-bar {
+        margin-top: 0.5rem;
+    }
+}
+
+/* Safari-specific fixes */
+@supports (-webkit-touch-callout: none) {
+    .reader-content {
+        /* Prevent text selection during scroll on iOS */
+        -webkit-touch-callout: none;
+        -webkit-user-select: text;
+    }
+
+    select {
+        /* Better appearance on iOS */
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url('data:image/svg+xml;utf8,<svg fill="gray" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>');
+        background-repeat: no-repeat;
+        background-position: right 0.5rem center;
+        background-size: 1rem;
+        padding-right: 2rem;
+    }
+}
