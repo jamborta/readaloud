@@ -1,0 +1,12 @@
+name = "readaloud-backend"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# KV namespace for user storage
+[[kv_namespaces]]
+binding = "USERS_KV"
+id = "your-kv-namespace-id" # Create with: wrangler kv:namespace create USERS_KV
+
+# Secrets (set these with: wrangler secret put SECRET_NAME)
+# wrangler secret put SECRET_KEY
+# wrangler secret put GOOGLE_CLOUD_API_KEY

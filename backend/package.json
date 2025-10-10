@@ -1,0 +1,17 @@
+{
+  "name": "readaloud-backend-worker",
+  "version": "2.0.0",
+  "description": "ReadAloud FastAPI backend deployed as Cloudflare Worker",
+  "main": "worker.js",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "jose": "^5.2.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}
