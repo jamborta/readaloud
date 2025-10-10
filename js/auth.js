@@ -50,6 +50,10 @@ class AuthManager {
                             <label for="auth-password">Password</label>
                             <input type="password" id="auth-password" class="form-input" required>
                         </div>
+                        <div class="form-group" id="invitation-code-group" style="display: none;">
+                            <label for="auth-invitation-code">Invitation Code</label>
+                            <input type="text" id="auth-invitation-code" class="form-input">
+                        </div>
                         <div class="auth-error" id="auth-error"></div>
                         <button type="submit" class="auth-submit-btn" id="auth-submit">Login</button>
                     </form>
@@ -61,6 +65,8 @@ class AuthManager {
             const form = modal.querySelector('#auth-form');
             const usernameInput = modal.querySelector('#auth-username');
             const passwordInput = modal.querySelector('#auth-password');
+            const invitationCodeInput = modal.querySelector('#auth-invitation-code');
+            const invitationCodeGroup = modal.querySelector('#invitation-code-group');
             const errorDiv = modal.querySelector('#auth-error');
             const submitBtn = modal.querySelector('#auth-submit');
             const tabs = modal.querySelectorAll('.auth-tab');
@@ -76,6 +82,15 @@ class AuthManager {
                     isLogin = tab.dataset.tab === 'login';
                     submitBtn.textContent = isLogin ? 'Login' : 'Register';
                     errorDiv.textContent = '';
+
+                    // Show/hide invitation code field
+                    if (isLogin) {
+                        invitationCodeGroup.style.display = 'none';
+                        invitationCodeInput.removeAttribute('required');
+                    } else {
+                        invitationCodeGroup.style.display = 'block';
+                        invitationCodeInput.setAttribute('required', 'required');
+                    }
                 });
             });
 
@@ -85,9 +100,15 @@ class AuthManager {
 
                 const username = usernameInput.value.trim();
                 const password = passwordInput.value;
+                const invitationCode = invitationCodeInput.value.trim();
 
                 if (!username || !password) {
                     errorDiv.textContent = 'Please fill in all fields';
+                    return;
+                }
+
+                if (!isLogin && !invitationCode) {
+                    errorDiv.textContent = 'Please enter an invitation code';
                     return;
                 }
 
@@ -104,7 +125,7 @@ class AuthManager {
                     if (isLogin) {
                         await ttsApi.login(username, password);
                     } else {
-                        await ttsApi.register(username, password);
+                        await ttsApi.register(username, password, invitationCode);
                     }
 
                     // Success

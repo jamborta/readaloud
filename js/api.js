@@ -26,7 +26,7 @@ class TTSApiClient {
     /**
      * Register a new user
      */
-    async register(username, password) {
+    async register(username, password, invitationCode) {
         if (!this.isOnline) {
             throw new Error('No internet connection');
         }
@@ -37,7 +37,7 @@ class TTSApiClient {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ username, password })
+                body: JSON.stringify({ username, password, invitationCode })
             });
 
             if (!response.ok) {
