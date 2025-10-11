@@ -247,7 +247,7 @@ class BookReader {
                 width: "100%",
                 height: "100%",
                 flow: "paginated",
-                spread: "none"
+                spread: "auto"  // Show two pages side by side
             });
 
             // Track location changes first

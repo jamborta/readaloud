@@ -24,6 +24,27 @@
         #back-btn:hover {
             background: rgba(255,255,255,0.2);
         }
+
+        /* Replace icon fonts with unicode symbols */
+        .icon-list-1::before { content: "☰ "; }
+        .icon-bookmark::before { content: "🔖 "; }
+        .icon-menu::before { content: "☰ "; }
+        .icon-cog::before { content: "⚙ "; }
+        .icon-cancel-circled::before { content: "×"; font-size: 2rem; }
+
+        /* Make icons visible */
+        #panels a, #title-controls a {
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .closer {
+            cursor: pointer;
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            font-size: 2rem;
+        }
     </style>
 </head>
 <body>
@@ -107,6 +128,6 @@
     <script src="js/storage.js"></script>
     <script src="js/api.js"></script>
     <script src="js/auth.js"></script>
-    <script src="js/reader.js?v=4.0.0"></script>
+    <script src="js/reader.js?v=4.0.1"></script>
 </body>
 </html>
