@@ -45,6 +45,11 @@
             top: 10px;
             font-size: 2rem;
         }
+
+        /* Initial state: sidebar closed */
+        #main.closed {
+            left: 0;
+        }
     </style>
 </head>
 <body>
@@ -57,7 +62,7 @@
         </div>
     </div>
 
-    <div id="main">
+    <div id="main" class="closed">
         <div id="titlebar">
             <div id="opener">
                 <a id="slider" class="icon-menu">Menu</a>

@@ -78,6 +78,7 @@ class BookReader {
     }
 
     setupEventListeners() {
+        console.log('=== setupEventListeners called ===');
         // Back button
         const backBtn = document.getElementById('back-btn');
         if (backBtn) {
@@ -88,19 +89,39 @@ class BookReader {
             });
         }
 
-        // TOC toggle button
-        const tocBtn = document.getElementById('show-Toc');
+        // Sidebar opener button (in titlebar)
+        this.sidebarOpen = false;
+        const slider = document.getElementById('slider');
         const sidebar = document.getElementById('sidebar');
-        console.log('TOC button:', tocBtn, 'Sidebar:', sidebar);
-        if (tocBtn && sidebar) {
+        const main = document.getElementById('main');
+
+        if (slider && sidebar && main) {
+            slider.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (this.sidebarOpen) {
+                    // Close sidebar
+                    sidebar.classList.remove('open');
+                    main.classList.add('closed');
+                    this.sidebarOpen = false;
+                } else {
+                    // Open sidebar
+                    sidebar.classList.add('open');
+                    main.classList.remove('closed');
+                    this.sidebarOpen = true;
+                }
+            });
+        }
+
+        // TOC view switcher (switches views within sidebar)
+        const tocBtn = document.getElementById('show-Toc');
+        const tocView = document.getElementById('tocView');
+
+        if (tocBtn && tocView) {
             tocBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                console.log('TOC clicked, toggling sidebar');
-                sidebar.classList.toggle('open');
-                console.log('Sidebar classes:', sidebar.className);
+                // Just ensure TOC view is visible (we only have TOC, no other views)
+                tocView.style.display = 'block';
             });
-        } else {
-            console.error('TOC button or sidebar not found!');
         }
 
         // TTS Controls (removed from UI, keeping functions for future)
