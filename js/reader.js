@@ -79,10 +79,14 @@ class BookReader {
 
     setupEventListeners() {
         // Back button
-        document.getElementById('back-btn').addEventListener('click', async () => {
-            await this.saveReadingPosition();
-            window.location.href = 'index.html';
-        });
+        const backBtn = document.getElementById('back-btn');
+        if (backBtn) {
+            backBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                await this.saveReadingPosition();
+                window.location.href = 'index.html';
+            });
+        }
 
         // TTS Controls (removed from UI, keeping functions for future)
 
@@ -117,20 +121,32 @@ class BookReader {
         });
 
         // Settings modal
-        document.getElementById('settings-btn').addEventListener('click', () => {
-            document.getElementById('settings-modal').style.display = 'flex';
-        });
+        const settingBtn = document.getElementById('setting');
+        const settingsModal = document.getElementById('settings-modal');
+        const overlay = document.querySelector('.overlay');
+        const closer = document.querySelector('.closer');
 
-        document.getElementById('close-settings').addEventListener('click', () => {
-            document.getElementById('settings-modal').style.display = 'none';
-        });
+        if (settingBtn && settingsModal) {
+            settingBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                settingsModal.classList.add('md-show');
+                overlay.classList.add('md-show');
+            });
+        }
 
-        // Close modal when clicking outside
-        document.getElementById('settings-modal').addEventListener('click', (e) => {
-            if (e.target.id === 'settings-modal') {
-                document.getElementById('settings-modal').style.display = 'none';
-            }
-        });
+        if (closer) {
+            closer.addEventListener('click', () => {
+                settingsModal.classList.remove('md-show');
+                overlay.classList.remove('md-show');
+            });
+        }
+
+        if (overlay) {
+            overlay.addEventListener('click', () => {
+                settingsModal.classList.remove('md-show');
+                overlay.classList.remove('md-show');
+            });
+        }
 
         // Navigation arrows (for EPUB)
         document.getElementById('prev').addEventListener('click', () => {
@@ -219,7 +235,7 @@ class BookReader {
             const uint8Array = new Uint8Array(this.book.fileData);
 
             if (typeof ePub === 'undefined') {
-                document.getElementById('area').innerHTML = '<p style="padding: 2rem;">EPUB library not loaded. Please refresh the page.</p>';
+                document.getElementById('viewer').innerHTML = '<p style="padding: 2rem;">EPUB library not loaded. Please refresh the page.</p>';
                 return;
             }
 
@@ -227,7 +243,7 @@ class BookReader {
             this.epubBook = ePub(uint8Array.buffer);
 
             // Create paginated rendition
-            this.rendition = this.epubBook.renderTo("area", {
+            this.rendition = this.epubBook.renderTo("viewer", {
                 width: "100%",
                 height: "100%",
                 flow: "paginated",
@@ -337,18 +353,18 @@ class BookReader {
         const location = this.rendition.currentLocation();
 
         if (location && location.start) {
-            // Use locations for accurate page tracking across the entire book
+            // Update chapter title if element exists
+            const chapterTitle = document.getElementById('chapter-title');
+            if (chapterTitle && location.start.displayed) {
+                // This will show current chapter info
+                // Could be enhanced to show actual chapter name from TOC
+            }
+
+            // Log page info to console since we removed the UI element
             if (this.epubBook.locations && this.epubBook.locations.total > 0) {
                 const currentPage = this.epubBook.locations.locationFromCfi(this.currentLocation);
                 const totalPages = this.epubBook.locations.total;
-
-                document.getElementById('current-page').textContent = `Page ${currentPage + 1}`;
-                document.getElementById('total-pages').textContent = totalPages;
-            } else {
-                // Fallback: show percentage through the book
-                const percent = this.epubBook.locations.percentageFromCfi(this.currentLocation);
-                document.getElementById('current-page').textContent = `${Math.round(percent * 100)}%`;
-                document.getElementById('total-pages').textContent = 'of book';
+                console.log(`Page ${currentPage + 1} of ${totalPages}`);
             }
         }
     }
@@ -705,42 +721,37 @@ class BookReader {
     }
 
     loadTableOfContents(toc) {
-        const tocContent = document.getElementById('toc-content');
+        const tocView = document.getElementById('tocView');
+        if (!tocView) return;
 
         if (!toc || toc.length === 0) {
-            tocContent.innerHTML = '<p class="toc-loading">No chapters available</p>';
+            tocView.innerHTML = '<p>No chapters available</p>';
             return;
         }
 
         // Recursively render TOC items
         const renderTOCItems = (items, level = 0) => {
             return items.map(item => {
-                const indent = level > 0 ? `style="padding-left: ${1.5 + (level * 0.75)}rem;"` : '';
                 const label = this.escapeHtml(item.label);
-                let html = `<a class="toc-item" data-href="${item.href}" ${indent}>${label}</a>`;
+                let html = `<a href="#" class="toc_link" data-href="${item.href}">${label}</a>`;
 
                 // Add sub-items if they exist
                 if (item.subitems && item.subitems.length > 0) {
-                    html += renderTOCItems(item.subitems, level + 1);
+                    html += '<ol>' + renderTOCItems(item.subitems, level + 1) + '</ol>';
                 }
 
-                return html;
+                return '<li>' + html + '</li>';
             }).join('');
         };
 
-        tocContent.innerHTML = renderTOCItems(toc);
+        tocView.innerHTML = '<ol>' + renderTOCItems(toc) + '</ol>';
 
         // Add click handlers to all TOC items
-        tocContent.querySelectorAll('.toc-item').forEach(item => {
+        tocView.querySelectorAll('.toc_link').forEach(item => {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
                 const href = e.target.dataset.href;
                 if (href && this.rendition) {
-                    // Remove active class from all items
-                    tocContent.querySelectorAll('.toc-item').forEach(i => i.classList.remove('active'));
-                    // Add active class to clicked item
-                    e.target.classList.add('active');
-                    // Navigate to chapter
                     this.rendition.display(href);
                 }
             });

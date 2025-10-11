@@ -1,75 +1,76 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="no-js">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>ReadAloud - Reader</title>
-    <link rel="stylesheet" href="css/reader.css?v=1760198915">
+    <link rel="stylesheet" href="css/epubjs.css">
+    <style>
+        /* Quick overrides for our app */
+        #back-btn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: #fff;
+            padding: 0.5rem 1rem;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            margin: 1rem;
+            display: block;
+            text-align: center;
+            text-decoration: none;
+        }
+        #back-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+    </style>
 </head>
-<body class="reader-body" data-theme="light" data-font-size="medium">
-
-    <!-- Permanent Sidebar -->
-    <div id="sidebar" class="sidebar">
-        <div class="sidebar-header">
-            <button id="back-btn" class="sidebar-btn" title="Back to Library">← Library</button>
+<body>
+    <div id="sidebar">
+        <a id="back-btn" href="index.html">← Back to Library</a>
+        <div id="panels">
+            <a id="show-Toc" class="show_view icon-list-1 active" data-view="Toc">TOC</a>
         </div>
-        <div class="panels">
-            <button id="toc-toggle" class="panel-btn active">TABLE OF CONTENTS</button>
-        </div>
-        <div id="toc-content" class="toc-view">
-            <p class="toc-loading">Loading...</p>
+        <div id="tocView" class="view">
         </div>
     </div>
 
-    <!-- Main Content Area -->
-    <div id="main" class="main">
-        <!-- Titlebar -->
-        <div id="titlebar" class="titlebar">
-            <div class="titlebar-center">
-                <h1 id="book-title" class="title">Loading...</h1>
+    <div id="main">
+        <div id="titlebar">
+            <div id="opener">
+                <a id="slider" class="icon-menu">Menu</a>
             </div>
-            <div class="titlebar-controls">
-                <button id="settings-btn" class="control-btn" title="Voice Settings">⚙</button>
-                <button id="font-size-btn" class="control-btn" title="Font Size">A</button>
-                <button id="theme-btn" class="control-btn" title="Theme">☀</button>
+            <div id="metainfo">
+                <span id="book-title"></span>
+                <span id="title-seperator">&nbsp;&nbsp;–&nbsp;&nbsp;</span>
+                <span id="chapter-title"></span>
+            </div>
+            <div id="title-controls">
+                <a id="setting" class="icon-cog">Settings</a>
+                <a id="font-size-btn" class="icon-cog">A</a>
+                <a id="theme-btn" class="icon-cog">Theme</a>
             </div>
         </div>
 
-        <!-- Navigation Arrows -->
-        <div id="prev" class="arrow prev-arrow">‹</div>
-        <div id="next" class="arrow next-arrow">›</div>
-
-        <!-- EPUB Viewer -->
-        <div id="viewer" class="viewer">
-            <div id="area"></div>
-        </div>
-
-        <!-- Page Info -->
-        <div class="page-info">
-            <span id="current-page">--</span>
-            <span class="divider">/</span>
-            <span id="total-pages">--</span>
-        </div>
+        <div id="divider"></div>
+        <div id="prev" class="arrow">‹</div>
+        <div id="viewer"></div>
+        <div id="next" class="arrow">›</div>
     </div>
 
     <!-- Voice Settings Modal -->
-    <div id="settings-modal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Voice Settings</h2>
-                <button id="close-settings" class="close-btn">×</button>
-            </div>
-            <div class="modal-body">
-                <div class="setting-item">
+    <div class="modal md-effect-1" id="settings-modal">
+        <div class="md-content">
+            <h3>Voice Settings</h3>
+            <div>
+                <p>
                     <label for="voice-select">Voice:</label>
                     <select id="voice-select" class="voice-select">
                         <option>Loading voices...</option>
                     </select>
-                </div>
-
-                <div class="setting-item">
+                </p>
+                <p>
                     <label for="speed-select">Speed:</label>
                     <select id="speed-select" class="speed-select">
                         <option value="0.5">0.5x</option>
@@ -80,9 +81,8 @@
                         <option value="1.75">1.75x</option>
                         <option value="2">2x</option>
                     </select>
-                </div>
-
-                <div class="setting-item">
+                </p>
+                <p>
                     <label for="pitch-select">Pitch:</label>
                     <select id="pitch-select" class="pitch-select">
                         <option value="-5">-5</option>
@@ -93,18 +93,20 @@
                         <option value="3">+3</option>
                         <option value="5">+5</option>
                     </select>
-                </div>
+                </p>
             </div>
+            <div class="closer icon-cancel-circled"></div>
         </div>
     </div>
+    <div class="overlay"></div>
 
     <!-- Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
-    <script src="libs/pdf.min.js?v=1.0.0"></script>
-    <script src="js/storage.js?v=1.0.0"></script>
-    <script src="js/api.js?v=1.0.0"></script>
-    <script src="js/auth.js?v=1.0.0"></script>
-    <script src="js/reader.js?v=1760198499"></script>
+    <script src="libs/pdf.min.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/reader.js?v=4.0.0"></script>
 </body>
 </html>
