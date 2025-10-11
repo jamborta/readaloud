@@ -20,8 +20,22 @@
             </div>
         </header>
 
-        <div id="reader-content" class="reader-content">
-            <!-- Book content will be rendered here -->
+        <!-- EPUB.js Viewer -->
+        <div id="viewer" class="epub-viewer">
+            <div id="prev" class="arrow">‹</div>
+            <div id="viewer-wrapper">
+                <div id="area"></div>
+            </div>
+            <div id="next" class="arrow">›</div>
+        </div>
+
+        <!-- Page Controls -->
+        <div class="page-nav">
+            <div class="page-info-display">
+                <span id="current-page">Page 1</span>
+                <span class="divider">/</span>
+                <span id="total-pages">--</span>
+            </div>
         </div>
 
         <div class="tts-controls">
@@ -92,6 +106,6 @@
     <script src="js/storage.js?v=1.0.0"></script>
     <script src="js/api.js?v=1.0.0"></script>
     <script src="js/auth.js?v=1.0.0"></script>
-    <script src="js/reader.js?v=1.2.0"></script>
+    <script src="js/reader.js?v=2.0.0"></script>
 </body>
 </html>

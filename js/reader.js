@@ -1,17 +1,20 @@
-// Reader and Google Cloud TTS Manager
+// Reader with EPUB.js Paginated Rendering and Google Cloud TTS
 class BookReader {
     constructor() {
         this.bookId = null;
         this.book = null;
+        this.rendition = null;
+        this.epubBook = null;
         this.currentParagraphs = [];
         this.currentParagraphIndex = 0;
         this.isPlaying = false;
         this.currentAudio = null;
         this.voices = [];
-        this.audioCache = new Map(); // Cache synthesized audio
+        this.audioCache = new Map();
         this.isLoadingAudio = false;
-        this.currentChunks = []; // Current text chunks being played
-        this.currentChunkIndex = 0; // Index of current chunk
+        this.currentChunks = [];
+        this.currentChunkIndex = 0;
+        this.currentLocation = null;
     }
 
     async init() {
@@ -51,11 +54,10 @@ class BookReader {
         this.setupUI();
         this.loadSettings();
         await this.renderBook();
-        this.loadReadingPosition();
         this.setupEventListeners();
         this.updateUsageDisplay();
 
-        // Load voices if authenticated, otherwise show placeholder
+        // Load voices if authenticated
         if (ttsApi.isAuthenticated()) {
             try {
                 await this.loadVoices();
@@ -64,7 +66,6 @@ class BookReader {
                 document.getElementById('voice-select').innerHTML = '<option>Login to load voices</option>';
             }
         } else {
-            // Not authenticated - show friendly message
             document.getElementById('voice-select').innerHTML = '<option>Login to load voices</option>';
         }
     }
@@ -89,7 +90,6 @@ class BookReader {
         document.getElementById('speed-select').addEventListener('change', (e) => {
             const speed = parseFloat(e.target.value);
             storage.saveSettings({ speed });
-            // Clear cache when speed changes
             this.audioCache.clear();
         });
 
@@ -97,14 +97,12 @@ class BookReader {
         document.getElementById('pitch-select').addEventListener('change', (e) => {
             const pitch = parseFloat(e.target.value);
             storage.saveSettings({ pitch });
-            // Clear cache when pitch changes
             this.audioCache.clear();
         });
 
         // Voice control
         document.getElementById('voice-select').addEventListener('change', (e) => {
             storage.saveSettings({ voiceId: e.target.value });
-            // Clear cache when voice changes
             this.audioCache.clear();
         });
 
@@ -134,6 +132,32 @@ class BookReader {
             }
         });
 
+        // Navigation arrows (for EPUB)
+        document.getElementById('prev').addEventListener('click', () => {
+            if (this.rendition) {
+                this.rendition.prev();
+            }
+        });
+
+        document.getElementById('next').addEventListener('click', () => {
+            if (this.rendition) {
+                this.rendition.next();
+            }
+        });
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (!this.rendition) return;
+
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                this.rendition.prev();
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                this.rendition.next();
+            }
+        });
+
         // Save position before leaving
         window.addEventListener('beforeunload', () => {
             this.saveReadingPosition();
@@ -150,7 +174,6 @@ class BookReader {
                     return `<option value="${voice.id}">${voice.name}</option>`;
                 }).join('');
 
-                // Restore saved voice selection after populating options
                 const settings = storage.getSettings();
                 if (settings.voiceId) {
                     voiceSelect.value = settings.voiceId;
@@ -159,7 +182,6 @@ class BookReader {
         } catch (error) {
             console.error('Failed to load voices:', error);
             if (error.message.includes('login')) {
-                // Will be prompted to login when trying to play
                 document.getElementById('voice-select').innerHTML = '<option>Login to load voices</option>';
             } else {
                 alert('Failed to load voices. Please check your internet connection and API configuration.');
@@ -170,54 +192,78 @@ class BookReader {
     loadSettings() {
         const settings = storage.getSettings();
 
-        // Set speed
         document.getElementById('speed-select').value = settings.speed || 1.0;
-
-        // Set pitch
         document.getElementById('pitch-select').value = settings.pitch || 0;
 
-        // Set voice if saved
         if (settings.voiceId) {
             document.getElementById('voice-select').value = settings.voiceId;
         }
 
-        // Set font size
         const fontSize = settings.fontSize || 'medium';
         document.body.setAttribute('data-font-size', fontSize);
 
-        // Set theme
         const theme = settings.theme || 'light';
         document.body.setAttribute('data-theme', theme);
     }
 
     async renderBook() {
-        const content = document.getElementById('reader-content');
-
-        if (this.book.fileType === 'pdf') {
-            await this.renderPDF(content);
+        if (this.book.fileType === 'epub') {
+            await this.renderEPUB();
         } else {
-            await this.renderEPUB(content);
+            await this.renderPDF();
         }
-
-        // Get all paragraphs
-        this.currentParagraphs = Array.from(content.querySelectorAll('p'));
-
-        // Add click handlers to paragraphs
-        this.currentParagraphs.forEach((p, index) => {
-            p.addEventListener('click', () => {
-                this.jumpToParagraph(index);
-            });
-        });
-
-        this.updateProgress();
     }
 
-    async renderPDF(container) {
+    async renderEPUB() {
+        try {
+            const uint8Array = new Uint8Array(this.book.fileData);
+
+            if (typeof ePub === 'undefined') {
+                document.getElementById('area').innerHTML = '<p style="padding: 2rem;">EPUB library not loaded. Please refresh the page.</p>';
+                return;
+            }
+
+            // Create EPUB book from array buffer
+            this.epubBook = ePub(uint8Array.buffer);
+
+            // Create paginated rendition
+            this.rendition = this.epubBook.renderTo("area", {
+                width: "100%",
+                height: "100%",
+                flow: "paginated",
+                spread: "none"
+            });
+
+            // Display the book
+            const displayed = await this.rendition.display();
+
+            // Apply theme
+            this.applyTheme();
+
+            // Track location changes
+            this.rendition.on('relocated', (location) => {
+                this.currentLocation = location.start.cfi;
+                this.updatePageDisplay(location);
+                this.saveReadingPosition();
+            });
+
+            // Load saved position
+            await this.loadReadingPosition();
+
+            console.log('EPUB rendered successfully');
+
+        } catch (error) {
+            console.error('Error rendering EPUB:', error);
+            document.getElementById('area').innerHTML = `<p style="padding: 2rem;">Error loading EPUB: ${error.message}. Please try a different file.</p>`;
+        }
+    }
+
+    async renderPDF() {
         try {
             const uint8Array = new Uint8Array(this.book.fileData);
 
             if (typeof pdfjsLib === 'undefined') {
-                container.innerHTML = '<p>PDF.js library not loaded. PDF reading is not available.</p>';
+                document.getElementById('area').innerHTML = '<p style="padding: 2rem;">PDF.js library not loaded. PDF reading is not available.</p>';
                 return;
             }
 
@@ -226,7 +272,8 @@ class BookReader {
             const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
             const pdf = await loadingTask.promise;
 
-            container.innerHTML = '<div class="pdf-text"></div>';
+            const container = document.getElementById('area');
+            container.innerHTML = '<div class="pdf-text" style="padding: 2rem; overflow-y: auto; height: 100%;"></div>';
             const textContainer = container.querySelector('.pdf-text');
 
             for (let i = 1; i <= pdf.numPages; i++) {
@@ -238,93 +285,75 @@ class BookReader {
                 paragraphs.forEach(para => {
                     const p = document.createElement('p');
                     p.textContent = para.trim();
+                    p.style.marginBottom = '1.2rem';
+                    p.style.cursor = 'pointer';
                     textContainer.appendChild(p);
                 });
             }
+
+            // Get paragraphs for TTS
+            this.currentParagraphs = Array.from(textContainer.querySelectorAll('p'));
+            this.currentParagraphs.forEach((p, index) => {
+                p.addEventListener('click', () => {
+                    this.jumpToParagraph(index);
+                });
+            });
+
+            console.log('PDF rendered successfully');
+
         } catch (error) {
             console.error('Error rendering PDF:', error);
-            container.innerHTML = '<p>Error loading PDF. This might be a complex PDF that cannot be read as text.</p>';
+            document.getElementById('area').innerHTML = '<p style="padding: 2rem;">Error loading PDF. This might be a complex PDF that cannot be read as text.</p>';
         }
     }
 
-    async renderEPUB(container) {
-        try {
-            const uint8Array = new Uint8Array(this.book.fileData);
-
-            // Check if epub.js is loaded
-            if (typeof ePub === 'undefined') {
-                container.innerHTML = '<p>EPUB library not loaded. Please refresh the page.</p>';
-                return;
-            }
-
-            // Create book instance from array buffer
-            const book = ePub(uint8Array.buffer);
-
-            // Wait for book to be ready
-            await book.ready;
-
-            // Wait for spine to load
-            const spine = await book.loaded.spine;
-
-            // Extract text from all sections
-            const textPromises = [];
-            spine.each((item) => {
-                textPromises.push(
-                    item.load(book.load.bind(book)).then((doc) => {
-                        // Handle different document structures
-                        let text = '';
-                        if (doc.body) {
-                            text = doc.body.textContent || doc.body.innerText || '';
-                        } else if (doc.documentElement) {
-                            text = doc.documentElement.textContent || doc.documentElement.innerText || '';
-                        } else if (doc.textContent) {
-                            text = doc.textContent;
-                        } else {
-                            console.warn(`Unknown document structure for ${item.href}`, doc);
-                        }
-
-                        item.unload();
-                        return text;
-                    }).catch(err => {
-                        console.warn(`Failed to load section ${item.href}:`, err);
-                        return '';
-                    })
-                );
-            });
-
-            const allTextSections = await Promise.all(textPromises);
-
-            // Join all text
-            const fullText = allTextSections.join('\n\n');
-
-            // Split into paragraphs (by double newlines or single newlines with meaningful content)
-            const paragraphs = fullText
-                .split(/\n\n+/)
-                .map(p => p.replace(/\n/g, ' ').trim())
-                .filter(p => p.length > 0);
-
-            // Create HTML
-            let html = '';
-            paragraphs.forEach(para => {
-                html += `<p>${this.escapeHtml(para)}</p>`;
-            });
-
-            if (html.length > 0) {
-                container.innerHTML = html;
-            } else {
-                container.innerHTML = '<p>Could not extract text from this EPUB file.</p>';
-            }
-
-        } catch (error) {
-            console.error('Error rendering EPUB:', error);
-            container.innerHTML = `<p>Error loading EPUB: ${error.message}. Please try a different file.</p>`;
+    updatePageDisplay(location) {
+        if (location && location.start && location.start.displayed) {
+            const current = location.start.displayed.page;
+            const total = location.start.displayed.total;
+            document.getElementById('current-page').textContent = `Page ${current}`;
+            document.getElementById('total-pages').textContent = total;
         }
     }
 
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+    applyTheme() {
+        if (!this.rendition) return;
+
+        const theme = document.body.getAttribute('data-theme') || 'light';
+
+        const themes = {
+            'light': {
+                body: {
+                    'background': '#ffffff',
+                    'color': '#1f2937'
+                }
+            },
+            'sepia': {
+                body: {
+                    'background': '#f4ecd8',
+                    'color': '#5c4a3a'
+                }
+            },
+            'dark': {
+                body: {
+                    'background': '#1f2937',
+                    'color': '#e5e7eb'
+                }
+            }
+        };
+
+        this.rendition.themes.default(themes[theme]);
+
+        // Apply font size
+        const fontSize = document.body.getAttribute('data-font-size') || 'medium';
+        const fontSizes = {
+            'small': '14px',
+            'medium': '16px',
+            'large': '18px',
+            'x-large': '20px'
+        };
+
+        this.rendition.themes.fontSize(fontSizes[fontSize]);
     }
 
     togglePlayPause() {
@@ -336,14 +365,17 @@ class BookReader {
     }
 
     async play() {
-        if (this.currentParagraphs.length === 0) return;
+        // TTS for PDF only for now
+        if (this.book.fileType !== 'pdf' || this.currentParagraphs.length === 0) {
+            alert('Text-to-speech is currently only available for PDF files.');
+            return;
+        }
+
         if (this.isLoadingAudio) return;
 
-        // Check authentication
         if (!ttsApi.isAuthenticated()) {
             try {
                 await authManager.requireAuth();
-                // Reload voices after authentication
                 await this.loadVoices();
             } catch (error) {
                 console.error('Authentication failed:', error);
@@ -367,13 +399,11 @@ class BookReader {
             this.currentAudio = null;
         }
 
-        // Reset chunk tracking
         this.currentChunks = [];
         this.currentChunkIndex = 0;
     }
 
     splitTextIntoChunks(text, maxChunkSize = 4500) {
-        // If text is short enough, return as single chunk
         if (text.length <= maxChunkSize) {
             return [text];
         }
@@ -385,7 +415,6 @@ class BookReader {
         for (const sentence of sentences) {
             const trimmedSentence = sentence.trim();
 
-            // If single sentence is longer than max, split it by words
             if (trimmedSentence.length > maxChunkSize) {
                 if (currentChunk) {
                     chunks.push(currentChunk.trim());
@@ -410,18 +439,15 @@ class BookReader {
                     currentChunk = wordChunk;
                 }
             } else if ((currentChunk + ' ' + trimmedSentence).length > maxChunkSize) {
-                // Current chunk + new sentence exceeds limit
                 if (currentChunk) {
                     chunks.push(currentChunk.trim());
                 }
                 currentChunk = trimmedSentence;
             } else {
-                // Add sentence to current chunk
                 currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
             }
         }
 
-        // Add remaining chunk
         if (currentChunk) {
             chunks.push(currentChunk.trim());
         }
@@ -434,40 +460,29 @@ class BookReader {
 
         try {
             this.isLoadingAudio = true;
-
-            // Highlight current paragraph
             this.highlightParagraph(this.currentParagraphIndex);
 
-            // Split into chunks if this is a new paragraph
             if (isNewParagraph) {
                 this.currentChunks = this.splitTextIntoChunks(text);
                 this.currentChunkIndex = 0;
             }
 
-            // Get current chunk
             const chunk = this.currentChunks[this.currentChunkIndex];
-
-            // Get current settings from UI
             const voiceId = document.getElementById('voice-select').value;
             const speed = parseFloat(document.getElementById('speed-select').value);
             const pitch = parseFloat(document.getElementById('pitch-select').value);
 
-            // Create cache key using chunk text
             const cacheKey = `${voiceId}-${speed}-${pitch}-${chunk.substring(0, 50)}`;
 
-            // Check cache
             let audioContent;
             if (this.audioCache.has(cacheKey)) {
                 audioContent = this.audioCache.get(cacheKey);
             } else {
-                // Synthesize speech for this chunk
                 const result = await ttsApi.synthesize(chunk, voiceId, speed, pitch);
                 audioContent = result.audioContent;
 
-                // Update usage tracking
                 this.trackUsage(result.characterCount);
 
-                // Cache the audio (limit cache size)
                 if (this.audioCache.size > 20) {
                     const firstKey = this.audioCache.keys().next().value;
                     this.audioCache.delete(firstKey);
@@ -475,22 +490,18 @@ class BookReader {
                 this.audioCache.set(cacheKey, audioContent);
             }
 
-            // Stop current audio if any
             if (this.currentAudio) {
                 this.currentAudio.pause();
             }
 
-            // Create and play audio
             this.currentAudio = ttsApi.createAudioElement(audioContent);
 
             this.currentAudio.onended = () => {
                 if (this.isPlaying) {
-                    // Check if there are more chunks to play
                     if (this.currentChunkIndex < this.currentChunks.length - 1) {
                         this.currentChunkIndex++;
-                        this.speak(text, false); // Continue with next chunk
+                        this.speak(text, false);
                     } else {
-                        // All chunks played, move to next paragraph
                         this.nextParagraph();
                     }
                 }
@@ -516,7 +527,6 @@ class BookReader {
     previousParagraph() {
         if (this.currentParagraphIndex > 0) {
             this.currentParagraphIndex--;
-            this.updateProgress();
 
             if (this.isPlaying) {
                 this.speak(this.currentParagraphs[this.currentParagraphIndex].textContent);
@@ -529,7 +539,6 @@ class BookReader {
     async nextParagraph() {
         if (this.currentParagraphIndex < this.currentParagraphs.length - 1) {
             this.currentParagraphIndex++;
-            this.updateProgress();
 
             if (this.isPlaying) {
                 await this.speak(this.currentParagraphs[this.currentParagraphIndex].textContent);
@@ -537,14 +546,12 @@ class BookReader {
                 this.highlightParagraph(this.currentParagraphIndex);
             }
         } else {
-            // End of book
             this.pause();
         }
     }
 
     jumpToParagraph(index) {
         this.currentParagraphIndex = index;
-        this.updateProgress();
 
         if (this.isPlaying) {
             this.speak(this.currentParagraphs[this.currentParagraphIndex].textContent);
@@ -554,6 +561,8 @@ class BookReader {
     }
 
     highlightParagraph(index) {
+        if (this.currentParagraphs.length === 0) return;
+
         this.currentParagraphs.forEach(p => p.classList.remove('active-paragraph'));
 
         if (this.currentParagraphs[index]) {
@@ -563,41 +572,34 @@ class BookReader {
         }
     }
 
-    updateProgress() {
-        const progress = (this.currentParagraphIndex / (this.currentParagraphs.length - 1)) * 100;
-        document.getElementById('progress-fill').style.width = `${progress}%`;
-    }
-
     async saveReadingPosition() {
-        await storage.saveReadingPosition(this.bookId, {
-            paragraphIndex: this.currentParagraphIndex,
-            totalParagraphs: this.currentParagraphs.length
-        });
+        if (this.book.fileType === 'epub' && this.currentLocation) {
+            await storage.saveReadingPosition(this.bookId, {
+                cfi: this.currentLocation,
+                type: 'epub'
+            });
+        } else if (this.book.fileType === 'pdf') {
+            await storage.saveReadingPosition(this.bookId, {
+                paragraphIndex: this.currentParagraphIndex,
+                totalParagraphs: this.currentParagraphs.length,
+                type: 'pdf'
+            });
+        }
     }
 
     async loadReadingPosition() {
-        // Try to get position from backend first using backend book ID
-        if (ttsApi.isAuthenticated() && this.book.backendId) {
-            try {
-                const backendPosition = await ttsApi.getPosition(this.book.backendId);
-                if (backendPosition && backendPosition.paragraphIndex !== undefined) {
-                    this.currentParagraphIndex = Math.min(backendPosition.paragraphIndex, this.currentParagraphs.length - 1);
-                    this.highlightParagraph(this.currentParagraphIndex);
-                    this.updateProgress();
-                    console.log(`✅ Loaded reading position from cloud: paragraph ${this.currentParagraphIndex}`);
-                    return;
-                }
-            } catch (error) {
-                console.error('Failed to load position from backend:', error);
-            }
-        }
-
-        // Fallback to local position
         const position = storage.getReadingPosition(this.bookId);
-        if (position && position.paragraphIndex !== undefined) {
+
+        if (position && position.type === 'epub' && position.cfi && this.rendition) {
+            try {
+                await this.rendition.display(position.cfi);
+                console.log('Loaded EPUB position:', position.cfi);
+            } catch (error) {
+                console.error('Failed to load position:', error);
+            }
+        } else if (position && position.type === 'pdf' && position.paragraphIndex !== undefined) {
             this.currentParagraphIndex = Math.min(position.paragraphIndex, this.currentParagraphs.length - 1);
             this.highlightParagraph(this.currentParagraphIndex);
-            this.updateProgress();
         }
     }
 
@@ -610,6 +612,9 @@ class BookReader {
 
         document.body.setAttribute('data-font-size', nextSize);
         storage.saveSettings({ fontSize: nextSize });
+
+        // Apply to EPUB rendition
+        this.applyTheme();
     }
 
     cycleTheme() {
@@ -621,6 +626,9 @@ class BookReader {
 
         document.body.setAttribute('data-theme', nextTheme);
         storage.saveSettings({ theme: nextTheme });
+
+        // Apply to EPUB rendition
+        this.applyTheme();
     }
 
     trackUsage(characterCount) {
@@ -628,7 +636,6 @@ class BookReader {
         const now = Date.now();
         const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
 
-        // Reset if new month
         if (usage.monthStart < monthStart) {
             usage.charactersUsed = 0;
             usage.monthStart = monthStart;
