@@ -234,17 +234,32 @@ class BookReader {
                 spread: "none"
             });
 
+            // Track location changes first
+            this.rendition.on('relocated', (location) => {
+                this.currentLocation = location.start.cfi;
+                this.updatePageDisplay();
+                this.saveReadingPosition();
+            });
+
             // Display the book
             const displayed = await this.rendition.display();
+
+            // Set initial location
+            if (this.rendition.currentLocation()) {
+                this.currentLocation = this.rendition.currentLocation().start.cfi;
+            }
 
             // Apply theme
             this.applyTheme();
 
-            // Track location changes
-            this.rendition.on('relocated', (location) => {
-                this.currentLocation = location.start.cfi;
-                this.updatePageDisplay(location);
-                this.saveReadingPosition();
+            // Generate locations for the whole book (for proper page tracking)
+            this.epubBook.ready.then(() => {
+                return this.epubBook.locations.generate(1600); // ~1 page per 1600 characters
+            }).then((locations) => {
+                console.log(`Generated ${locations.length} location points for entire book`);
+                this.updatePageDisplay();
+            }).catch((error) => {
+                console.error('Failed to generate locations:', error);
             });
 
             // Load saved position
@@ -307,12 +322,27 @@ class BookReader {
         }
     }
 
-    updatePageDisplay(location) {
-        if (location && location.start && location.start.displayed) {
-            const current = location.start.displayed.page;
-            const total = location.start.displayed.total;
-            document.getElementById('current-page').textContent = `Page ${current}`;
-            document.getElementById('total-pages').textContent = total;
+    updatePageDisplay() {
+        if (!this.rendition || !this.currentLocation) {
+            return;
+        }
+
+        const location = this.rendition.currentLocation();
+
+        if (location && location.start) {
+            // Use locations for accurate page tracking across the entire book
+            if (this.epubBook.locations && this.epubBook.locations.total > 0) {
+                const currentPage = this.epubBook.locations.locationFromCfi(this.currentLocation);
+                const totalPages = this.epubBook.locations.total;
+
+                document.getElementById('current-page').textContent = `Page ${currentPage + 1}`;
+                document.getElementById('total-pages').textContent = totalPages;
+            } else {
+                // Fallback: show percentage through the book
+                const percent = this.epubBook.locations.percentageFromCfi(this.currentLocation);
+                document.getElementById('current-page').textContent = `${Math.round(percent * 100)}%`;
+                document.getElementById('total-pages').textContent = 'of book';
+            }
         }
     }
 
