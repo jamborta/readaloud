@@ -12,9 +12,6 @@ class BookReader {
         this.isLoadingAudio = false;
         this.currentChunks = []; // Current text chunks being played
         this.currentChunkIndex = 0; // Index of current chunk
-        this.pages = []; // Array of pages, each containing paragraph indices
-        this.currentPageIndex = 0; // Current page being viewed
-        this.paragraphsPerPage = 10; // Approximate paragraphs per page (will be dynamic)
     }
 
     async init() {
@@ -137,21 +134,6 @@ class BookReader {
             }
         });
 
-        // Page navigation
-        document.getElementById('prev-page-btn').addEventListener('click', () => this.previousPage());
-        document.getElementById('next-page-btn').addEventListener('click', () => this.nextPage());
-
-        // Keyboard navigation
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                this.previousPage();
-            } else if (e.key === 'ArrowRight') {
-                e.preventDefault();
-                this.nextPage();
-            }
-        });
-
         // Save position before leaving
         window.addEventListener('beforeunload', () => {
             this.saveReadingPosition();
@@ -209,7 +191,7 @@ class BookReader {
     }
 
     async renderBook() {
-        const content = document.getElementById('book-page-content');
+        const content = document.getElementById('reader-content');
 
         if (this.book.fileType === 'pdf') {
             await this.renderPDF(content);
@@ -220,33 +202,12 @@ class BookReader {
         // Get all paragraphs
         this.currentParagraphs = Array.from(content.querySelectorAll('p'));
 
-        console.log(`Found ${this.currentParagraphs.length} paragraphs`);
-
-        if (this.currentParagraphs.length === 0) {
-            console.warn('No paragraphs found in book content');
-            content.innerHTML = '<p>No readable content found in this book.</p>';
-            return;
-        }
-
         // Add click handlers to paragraphs
         this.currentParagraphs.forEach((p, index) => {
             p.addEventListener('click', () => {
                 this.jumpToParagraph(index);
             });
         });
-
-        // Create pages
-        this.createPages();
-
-        if (this.pages.length === 0) {
-            console.error('Failed to create pages');
-            // Show all paragraphs as fallback
-            this.currentParagraphs.forEach(p => p.style.display = 'block');
-            return;
-        }
-
-        // Show first page
-        this.showPage(0);
 
         this.updateProgress();
     }
@@ -583,16 +544,6 @@ class BookReader {
 
     jumpToParagraph(index) {
         this.currentParagraphIndex = index;
-
-        // Find which page contains this paragraph
-        for (let i = 0; i < this.pages.length; i++) {
-            const page = this.pages[i];
-            if (index >= page.startIndex && index < page.endIndex) {
-                this.showPage(i);
-                break;
-            }
-        }
-
         this.updateProgress();
 
         if (this.isPlaying) {
@@ -620,9 +571,7 @@ class BookReader {
     async saveReadingPosition() {
         await storage.saveReadingPosition(this.bookId, {
             paragraphIndex: this.currentParagraphIndex,
-            totalParagraphs: this.currentParagraphs.length,
-            pageIndex: this.currentPageIndex,
-            totalPages: this.pages.length
+            totalParagraphs: this.currentParagraphs.length
         });
     }
 
@@ -633,17 +582,10 @@ class BookReader {
                 const backendPosition = await ttsApi.getPosition(this.book.backendId);
                 if (backendPosition && backendPosition.paragraphIndex !== undefined) {
                     this.currentParagraphIndex = Math.min(backendPosition.paragraphIndex, this.currentParagraphs.length - 1);
-
-                    // Find which page contains this paragraph
-                    for (let i = 0; i < this.pages.length; i++) {
-                        const page = this.pages[i];
-                        if (this.currentParagraphIndex >= page.startIndex && this.currentParagraphIndex < page.endIndex) {
-                            this.showPage(i);
-                            this.highlightParagraph(this.currentParagraphIndex);
-                            console.log(`✅ Loaded reading position from cloud: page ${i + 1}, paragraph ${this.currentParagraphIndex}`);
-                            return;
-                        }
-                    }
+                    this.highlightParagraph(this.currentParagraphIndex);
+                    this.updateProgress();
+                    console.log(`✅ Loaded reading position from cloud: paragraph ${this.currentParagraphIndex}`);
+                    return;
                 }
             } catch (error) {
                 console.error('Failed to load position from backend:', error);
@@ -652,27 +594,10 @@ class BookReader {
 
         // Fallback to local position
         const position = storage.getReadingPosition(this.bookId);
-        if (position) {
-            // Try to use page index first (newer format)
-            if (position.pageIndex !== undefined && position.pageIndex < this.pages.length) {
-                this.showPage(position.pageIndex);
-            } else if (position.paragraphIndex !== undefined) {
-                // Fallback to paragraph index (older format)
-                this.currentParagraphIndex = Math.min(position.paragraphIndex, this.currentParagraphs.length - 1);
-
-                // Find which page contains this paragraph
-                for (let i = 0; i < this.pages.length; i++) {
-                    const page = this.pages[i];
-                    if (this.currentParagraphIndex >= page.startIndex && this.currentParagraphIndex < page.endIndex) {
-                        this.showPage(i);
-                        break;
-                    }
-                }
-            }
-
-            if (position.paragraphIndex !== undefined) {
-                this.highlightParagraph(position.paragraphIndex);
-            }
+        if (position && position.paragraphIndex !== undefined) {
+            this.currentParagraphIndex = Math.min(position.paragraphIndex, this.currentParagraphs.length - 1);
+            this.highlightParagraph(this.currentParagraphIndex);
+            this.updateProgress();
         }
     }
 
@@ -685,19 +610,6 @@ class BookReader {
 
         document.body.setAttribute('data-font-size', nextSize);
         storage.saveSettings({ fontSize: nextSize });
-
-        // Recreate pages with new font size
-        const currentParagraphIndex = this.currentParagraphIndex;
-        this.createPages();
-
-        // Find which page contains the current paragraph
-        for (let i = 0; i < this.pages.length; i++) {
-            const page = this.pages[i];
-            if (currentParagraphIndex >= page.startIndex && currentParagraphIndex < page.endIndex) {
-                this.showPage(i);
-                break;
-            }
-        }
     }
 
     cycleTheme() {
@@ -709,95 +621,6 @@ class BookReader {
 
         document.body.setAttribute('data-theme', nextTheme);
         storage.saveSettings({ theme: nextTheme });
-    }
-
-    createPages() {
-        // Simple pagination - divide paragraphs into chunks
-        // In a more sophisticated version, we'd measure actual rendered height
-        this.pages = [];
-        const totalParagraphs = this.currentParagraphs.length;
-
-        // Estimate paragraphs per page based on font size
-        const fontSize = document.body.getAttribute('data-font-size') || 'medium';
-        const paragraphsMap = {
-            'small': 15,
-            'medium': 12,
-            'large': 10,
-            'x-large': 8
-        };
-        this.paragraphsPerPage = paragraphsMap[fontSize] || 12;
-
-        // Split paragraphs into pages
-        for (let i = 0; i < totalParagraphs; i += this.paragraphsPerPage) {
-            const endIndex = Math.min(i + this.paragraphsPerPage, totalParagraphs);
-            this.pages.push({
-                startIndex: i,
-                endIndex: endIndex
-            });
-        }
-
-        console.log(`Created ${this.pages.length} pages from ${totalParagraphs} paragraphs`);
-    }
-
-    showPage(pageIndex) {
-        if (!this.pages || this.pages.length === 0) {
-            console.error('No pages available');
-            return;
-        }
-
-        if (pageIndex < 0 || pageIndex >= this.pages.length) {
-            console.warn(`Invalid page index: ${pageIndex}`);
-            return;
-        }
-
-        this.currentPageIndex = pageIndex;
-        const page = this.pages[pageIndex];
-
-        if (!page) {
-            console.error(`Page ${pageIndex} not found`);
-            return;
-        }
-
-        console.log(`Showing page ${pageIndex + 1}/${this.pages.length} (paragraphs ${page.startIndex}-${page.endIndex})`);
-
-        // Hide all paragraphs
-        this.currentParagraphs.forEach(p => p.style.display = 'none');
-
-        // Show paragraphs for current page
-        for (let i = page.startIndex; i < page.endIndex; i++) {
-            if (this.currentParagraphs[i]) {
-                this.currentParagraphs[i].style.display = 'block';
-            }
-        }
-
-        // Update page display
-        document.getElementById('page-number-display').textContent = `Page ${pageIndex + 1}`;
-        document.getElementById('page-info-display').textContent = `Page ${pageIndex + 1} of ${this.pages.length}`;
-
-        // Update navigation buttons
-        document.getElementById('prev-page-btn').disabled = pageIndex === 0;
-        document.getElementById('next-page-btn').disabled = pageIndex === this.pages.length - 1;
-
-        // Scroll to top of page content
-        document.getElementById('book-page-content').scrollTop = 0;
-
-        // Update progress bar
-        const progress = this.pages.length > 1 ? (pageIndex / (this.pages.length - 1)) * 100 : 100;
-        document.getElementById('progress-fill').style.width = `${progress}%`;
-    }
-
-    previousPage() {
-        if (this.currentPageIndex > 0) {
-            this.showPage(this.currentPageIndex - 1);
-            this.saveReadingPosition();
-        }
-    }
-
-    nextPage() {
-        if (this.currentPageIndex < this.pages.length - 1) {
-            this.showPage(this.currentPageIndex + 1);
-            this.saveReadingPosition();
-        }
     }
 
     trackUsage(characterCount) {
