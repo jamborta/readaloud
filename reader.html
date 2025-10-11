@@ -2,7 +2,7 @@
 <html class="no-js">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <title>ReadAloud - Reader</title>
     <link rel="stylesheet" href="css/epubjs.css">
@@ -87,16 +87,9 @@
             display: block;
         }
 
-        /* Ensure sidebar is above overlay and scrollable */
+        /* Ensure sidebar is above overlay */
         #sidebar {
             z-index: 100;
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        #tocView {
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
         }
 
         /* Mobile responsive styles */
