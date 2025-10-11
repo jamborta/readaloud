@@ -39,6 +39,12 @@
         .icon-cog::before { content: "⚙ "; }
         .icon-cancel-circled::before { content: "×"; font-size: 2rem; }
 
+        /* Close button styling */
+        #close-book {
+            font-size: 1.5rem;
+            line-height: 1;
+        }
+
         #panels a, #title-controls a {
             cursor: pointer;
             text-decoration: none;
@@ -91,7 +97,6 @@
         <div id="titlebar">
             <div id="opener">
                 <a id="slider" class="icon-menu">Menu</a>
-                <a id="close-book" class="icon-menu" style="margin-left: 0.5rem;">× Close</a>
             </div>
             <div id="metainfo">
                 <span id="book-title"></span>
@@ -99,6 +104,7 @@
                 <span id="chapter-title"></span>
             </div>
             <div id="title-controls">
+                <a id="close-book" title="Close Book">×</a>
                 <a id="setting" class="icon-cog">Settings</a>
                 <a id="font-size-btn" class="icon-cog">A</a>
                 <a id="theme-btn" class="icon-cog">Theme</a>
