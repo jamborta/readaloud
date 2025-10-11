@@ -91,11 +91,16 @@ class BookReader {
         // TOC toggle button
         const tocBtn = document.getElementById('show-Toc');
         const sidebar = document.getElementById('sidebar');
+        console.log('TOC button:', tocBtn, 'Sidebar:', sidebar);
         if (tocBtn && sidebar) {
             tocBtn.addEventListener('click', (e) => {
                 e.preventDefault();
+                console.log('TOC clicked, toggling sidebar');
                 sidebar.classList.toggle('open');
+                console.log('Sidebar classes:', sidebar.className);
             });
+        } else {
+            console.error('TOC button or sidebar not found!');
         }
 
         // TTS Controls (removed from UI, keeping functions for future)
