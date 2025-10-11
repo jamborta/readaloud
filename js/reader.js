@@ -250,7 +250,18 @@ class BookReader {
             spine.each((item) => {
                 textPromises.push(
                     item.load(book.load.bind(book)).then((doc) => {
-                        const text = doc.body.textContent || doc.body.innerText || '';
+                        // Handle different document structures
+                        let text = '';
+                        if (doc.body) {
+                            text = doc.body.textContent || doc.body.innerText || '';
+                        } else if (doc.documentElement) {
+                            text = doc.documentElement.textContent || doc.documentElement.innerText || '';
+                        } else if (doc.textContent) {
+                            text = doc.textContent;
+                        } else {
+                            console.warn(`Unknown document structure for ${item.href}`, doc);
+                        }
+
                         console.log(`Extracted ${text.length} chars from ${item.href}`);
                         item.unload();
                         return text;
