@@ -140,10 +140,24 @@
                 font-size: 0.85rem !important;
             }
 
-            /* Arrows */
+            /* Viewer - reduce margins on mobile */
+            #viewer {
+                width: 90% !important;
+                margin: 0 auto !important;
+            }
+
+            /* Arrows - closer to edges */
             .arrow {
                 font-size: 3rem !important;
-                padding: 1rem 0.5rem !important;
+                padding: 1rem 0.25rem !important;
+            }
+
+            #prev {
+                left: 0 !important;
+            }
+
+            #next {
+                right: 0 !important;
             }
 
             /* Back button in sidebar */
@@ -206,8 +220,6 @@
             <div id="title-controls">
                 <a id="close-book" title="Close Book">×</a>
                 <a id="setting" class="icon-cog">Settings</a>
-                <a id="font-size-btn" class="icon-cog">A</a>
-                <a id="theme-btn" class="icon-cog">Theme</a>
             </div>
         </div>
 
@@ -217,11 +229,31 @@
         <div id="next" class="arrow">›</div>
     </div>
 
-    <!-- Voice Settings Modal -->
+    <!-- Settings Modal -->
     <div class="modal md-effect-1" id="settings-modal">
         <div class="md-content">
-            <h3>Voice Settings</h3>
+            <h3>Settings</h3>
             <div>
+                <h4 style="margin-top: 1rem; margin-bottom: 0.5rem; font-size: 1rem; color: #666;">Reading</h4>
+                <p>
+                    <label for="theme-select">Theme:</label>
+                    <select id="theme-select" class="theme-select">
+                        <option value="light">Light</option>
+                        <option value="sepia">Sepia</option>
+                        <option value="dark">Dark</option>
+                    </select>
+                </p>
+                <p>
+                    <label for="font-size-select">Font Size:</label>
+                    <select id="font-size-select" class="font-size-select">
+                        <option value="small">Small</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="large">Large</option>
+                        <option value="x-large">Extra Large</option>
+                    </select>
+                </p>
+
+                <h4 style="margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 1rem; color: #666;">Voice (PDF only)</h4>
                 <p>
                     <label for="voice-select">Voice:</label>
                     <select id="voice-select" class="voice-select">

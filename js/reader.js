@@ -131,15 +131,27 @@ class BookReader {
             this.audioCache.clear();
         });
 
-        // Font size control
-        document.getElementById('font-size-btn').addEventListener('click', () => {
-            this.cycleFontSize();
-        });
+        // Theme control (in settings modal)
+        const themeSelect = document.getElementById('theme-select');
+        if (themeSelect) {
+            themeSelect.addEventListener('change', (e) => {
+                const theme = e.target.value;
+                document.body.setAttribute('data-theme', theme);
+                storage.saveSettings({ theme });
+                this.applyTheme();
+            });
+        }
 
-        // Theme toggle
-        document.getElementById('theme-btn').addEventListener('click', () => {
-            this.cycleTheme();
-        });
+        // Font size control (in settings modal)
+        const fontSizeSelect = document.getElementById('font-size-select');
+        if (fontSizeSelect) {
+            fontSizeSelect.addEventListener('change', (e) => {
+                const fontSize = e.target.value;
+                document.body.setAttribute('data-font-size', fontSize);
+                storage.saveSettings({ fontSize });
+                this.applyTheme();
+            });
+        }
 
         // Settings modal
         const settingBtn = document.getElementById('setting');
