@@ -78,7 +78,6 @@ class BookReader {
     }
 
     setupEventListeners() {
-        console.log('=== setupEventListeners called ===');
         // Back button
         const backBtn = document.getElementById('back-btn');
         if (backBtn) {
@@ -89,38 +88,24 @@ class BookReader {
             });
         }
 
-        // Sidebar opener button (in titlebar)
-        this.sidebarOpen = false;
+        // Sidebar toggle - simple!
         const slider = document.getElementById('slider');
         const sidebar = document.getElementById('sidebar');
-        const main = document.getElementById('main');
 
-        if (slider && sidebar && main) {
+        if (slider && sidebar) {
             slider.addEventListener('click', (e) => {
                 e.preventDefault();
-                if (this.sidebarOpen) {
-                    // Close sidebar
-                    sidebar.classList.remove('open');
-                    main.classList.add('closed');
-                    this.sidebarOpen = false;
-                } else {
-                    // Open sidebar
-                    sidebar.classList.add('open');
-                    main.classList.remove('closed');
-                    this.sidebarOpen = true;
-                }
+                sidebar.classList.toggle('open');
             });
         }
 
-        // TOC view switcher (switches views within sidebar)
-        const tocBtn = document.getElementById('show-Toc');
-        const tocView = document.getElementById('tocView');
-
-        if (tocBtn && tocView) {
-            tocBtn.addEventListener('click', (e) => {
+        // Close book button
+        const closeBook = document.getElementById('close-book');
+        if (closeBook) {
+            closeBook.addEventListener('click', async (e) => {
                 e.preventDefault();
-                // Just ensure TOC view is visible (we only have TOC, no other views)
-                tocView.style.display = 'block';
+                await this.saveReadingPosition();
+                window.location.href = 'index.html';
             });
         }
 

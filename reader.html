@@ -7,7 +7,52 @@
     <title>ReadAloud - Reader</title>
     <link rel="stylesheet" href="css/epubjs.css">
     <style>
-        /* Quick overrides for our app */
+        /* Override epubjs CSS to make sidebar behavior work */
+
+        /* Force sidebar to start off-screen */
+        #sidebar {
+            left: -300px !important;
+            transition: left 0.4s ease;
+        }
+
+        #sidebar.open {
+            left: 0 !important;
+        }
+
+        /* Main positioning */
+        #main {
+            left: 0 !important;
+            width: 100% !important;
+            transition: left 0.4s ease, width 0.4s ease;
+        }
+
+        /* When sidebar opens, shift main right */
+        body:has(#sidebar.open) #main {
+            left: 300px !important;
+            width: calc(100% - 300px) !important;
+        }
+
+        /* Icon replacements */
+        .icon-list-1::before { content: "☰ "; }
+        .icon-bookmark::before { content: "🔖 "; }
+        .icon-menu::before { content: "☰ "; }
+        .icon-cog::before { content: "⚙ "; }
+        .icon-cancel-circled::before { content: "×"; font-size: 2rem; }
+
+        #panels a, #title-controls a {
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .closer {
+            cursor: pointer;
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            font-size: 2rem;
+        }
+
+        /* Back button */
         #back-btn {
             background: rgba(255,255,255,0.1);
             border: 1px solid rgba(255,255,255,0.3);
@@ -25,30 +70,10 @@
             background: rgba(255,255,255,0.2);
         }
 
-        /* Replace icon fonts with unicode symbols */
-        .icon-list-1::before { content: "☰ "; }
-        .icon-bookmark::before { content: "🔖 "; }
-        .icon-menu::before { content: "☰ "; }
-        .icon-cog::before { content: "⚙ "; }
-        .icon-cancel-circled::before { content: "×"; font-size: 2rem; }
-
-        /* Make icons visible */
-        #panels a, #title-controls a {
-            cursor: pointer;
-            text-decoration: none;
-        }
-
-        .closer {
-            cursor: pointer;
-            position: absolute;
-            right: 10px;
-            top: 10px;
-            font-size: 2rem;
-        }
-
-        /* Initial state: sidebar closed */
-        #main.closed {
-            left: 0;
+        /* Remove body margin/padding */
+        body {
+            margin: 0 !important;
+            padding: 0 !important;
         }
     </style>
 </head>
@@ -62,10 +87,11 @@
         </div>
     </div>
 
-    <div id="main" class="closed">
+    <div id="main">
         <div id="titlebar">
             <div id="opener">
                 <a id="slider" class="icon-menu">Menu</a>
+                <a id="close-book" class="icon-menu" style="margin-left: 0.5rem;">× Close</a>
             </div>
             <div id="metainfo">
                 <span id="book-title"></span>
@@ -133,6 +159,6 @@
     <script src="js/storage.js"></script>
     <script src="js/api.js"></script>
     <script src="js/auth.js"></script>
-    <script src="js/reader.js?v=4.0.1"></script>
+    <script src="js/reader.js?v=4.1.0"></script>
 </body>
 </html>
