@@ -75,14 +75,22 @@ class BookReader {
     }
 
     setupEventListeners() {
-        // Sidebar toggle - simple!
+        // Sidebar toggle with overlay
         const slider = document.getElementById('slider');
         const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
 
-        if (slider && sidebar) {
+        if (slider && sidebar && overlay) {
             slider.addEventListener('click', (e) => {
                 e.preventDefault();
                 sidebar.classList.toggle('open');
+                overlay.classList.toggle('visible');
+            });
+
+            // Close sidebar when clicking overlay
+            overlay.addEventListener('click', () => {
+                sidebar.classList.remove('open');
+                overlay.classList.remove('visible');
             });
         }
 

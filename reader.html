@@ -2,7 +2,7 @@
 <html class="no-js">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <title>ReadAloud - Reader</title>
     <link rel="stylesheet" href="css/epubjs.css">
@@ -69,6 +69,34 @@
         body {
             margin: 0 !important;
             padding: 0 !important;
+        }
+
+        /* Mobile overlay */
+        #sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 99;
+        }
+
+        #sidebar-overlay.visible {
+            display: block;
+        }
+
+        /* Ensure sidebar is above overlay and scrollable */
+        #sidebar {
+            z-index: 100;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        #tocView {
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         /* Mobile responsive styles */
@@ -174,6 +202,8 @@
     </style>
 </head>
 <body>
+    <div id="sidebar-overlay"></div>
+
     <div id="sidebar">
         <div id="panels">
             <a id="show-Toc" class="show_view active" data-view="Toc">TOC</a>
