@@ -40,7 +40,7 @@ function hideAllContent() {
 function showAllContent() {
     document.querySelector('.upload-section').style.display = 'block';
     document.getElementById('library-grid').style.display = 'grid';
-    document.getElementById('empty-state').style.display = 'flex';
+    // Don't set empty-state display - let renderLibrary() control it
 }
 
 // Update auth UI based on login status
