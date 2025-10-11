@@ -10,6 +10,8 @@ class BookReader {
         this.voices = [];
         this.audioCache = new Map(); // Cache synthesized audio
         this.isLoadingAudio = false;
+        this.currentChunks = []; // Current text chunks being played
+        this.currentChunkIndex = 0; // Index of current chunk
     }
 
     async init() {
@@ -348,9 +350,70 @@ class BookReader {
             this.currentAudio.pause();
             this.currentAudio = null;
         }
+
+        // Reset chunk tracking
+        this.currentChunks = [];
+        this.currentChunkIndex = 0;
     }
 
-    async speak(text) {
+    splitTextIntoChunks(text, maxChunkSize = 4500) {
+        // If text is short enough, return as single chunk
+        if (text.length <= maxChunkSize) {
+            return [text];
+        }
+
+        const chunks = [];
+        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+        let currentChunk = '';
+
+        for (const sentence of sentences) {
+            const trimmedSentence = sentence.trim();
+
+            // If single sentence is longer than max, split it by words
+            if (trimmedSentence.length > maxChunkSize) {
+                if (currentChunk) {
+                    chunks.push(currentChunk.trim());
+                    currentChunk = '';
+                }
+
+                const words = trimmedSentence.split(' ');
+                let wordChunk = '';
+
+                for (const word of words) {
+                    if ((wordChunk + ' ' + word).length > maxChunkSize) {
+                        if (wordChunk) {
+                            chunks.push(wordChunk.trim());
+                        }
+                        wordChunk = word;
+                    } else {
+                        wordChunk += (wordChunk ? ' ' : '') + word;
+                    }
+                }
+
+                if (wordChunk) {
+                    currentChunk = wordChunk;
+                }
+            } else if ((currentChunk + ' ' + trimmedSentence).length > maxChunkSize) {
+                // Current chunk + new sentence exceeds limit
+                if (currentChunk) {
+                    chunks.push(currentChunk.trim());
+                }
+                currentChunk = trimmedSentence;
+            } else {
+                // Add sentence to current chunk
+                currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
+            }
+        }
+
+        // Add remaining chunk
+        if (currentChunk) {
+            chunks.push(currentChunk.trim());
+        }
+
+        return chunks.length > 0 ? chunks : [text];
+    }
+
+    async speak(text, isNewParagraph = true) {
         if (this.isLoadingAudio) return;
 
         try {
@@ -359,21 +422,30 @@ class BookReader {
             // Highlight current paragraph
             this.highlightParagraph(this.currentParagraphIndex);
 
+            // Split into chunks if this is a new paragraph
+            if (isNewParagraph) {
+                this.currentChunks = this.splitTextIntoChunks(text);
+                this.currentChunkIndex = 0;
+            }
+
+            // Get current chunk
+            const chunk = this.currentChunks[this.currentChunkIndex];
+
             // Get current settings from UI
             const voiceId = document.getElementById('voice-select').value;
             const speed = parseFloat(document.getElementById('speed-select').value);
             const pitch = parseFloat(document.getElementById('pitch-select').value);
 
-            // Create cache key
-            const cacheKey = `${voiceId}-${speed}-${pitch}-${text.substring(0, 50)}`;
+            // Create cache key using chunk text
+            const cacheKey = `${voiceId}-${speed}-${pitch}-${chunk.substring(0, 50)}`;
 
             // Check cache
             let audioContent;
             if (this.audioCache.has(cacheKey)) {
                 audioContent = this.audioCache.get(cacheKey);
             } else {
-                // Synthesize speech
-                const result = await ttsApi.synthesize(text, voiceId, speed, pitch);
+                // Synthesize speech for this chunk
+                const result = await ttsApi.synthesize(chunk, voiceId, speed, pitch);
                 audioContent = result.audioContent;
 
                 // Update usage tracking
@@ -397,7 +469,14 @@ class BookReader {
 
             this.currentAudio.onended = () => {
                 if (this.isPlaying) {
-                    this.nextParagraph();
+                    // Check if there are more chunks to play
+                    if (this.currentChunkIndex < this.currentChunks.length - 1) {
+                        this.currentChunkIndex++;
+                        this.speak(text, false); // Continue with next chunk
+                    } else {
+                        // All chunks played, move to next paragraph
+                        this.nextParagraph();
+                    }
                 }
             };
 
