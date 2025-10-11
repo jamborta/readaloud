@@ -81,10 +81,7 @@ class BookReader {
             window.location.href = 'index.html';
         });
 
-        // TTS Controls
-        document.getElementById('play-pause').addEventListener('click', () => this.togglePlayPause());
-        document.getElementById('prev-paragraph').addEventListener('click', () => this.previousParagraph());
-        document.getElementById('next-paragraph').addEventListener('click', () => this.nextParagraph());
+        // TTS Controls (removed from UI, keeping functions for future)
 
         // Speed control
         document.getElementById('speed-select').addEventListener('change', (e) => {
