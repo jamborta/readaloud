@@ -159,6 +159,19 @@ class BookReader {
         window.addEventListener('beforeunload', () => {
             this.saveReadingPosition();
         });
+
+        // TOC sidebar controls
+        document.getElementById('toc-btn').addEventListener('click', () => {
+            this.openTOC();
+        });
+
+        document.getElementById('toc-close').addEventListener('click', () => {
+            this.closeTOC();
+        });
+
+        document.getElementById('toc-overlay').addEventListener('click', () => {
+            this.closeTOC();
+        });
     }
 
     async loadVoices() {
@@ -261,6 +274,13 @@ class BookReader {
 
             // Load saved position
             await this.loadReadingPosition();
+
+            // Load table of contents
+            this.epubBook.loaded.navigation.then((navigation) => {
+                this.loadTableOfContents(navigation.toc);
+            }).catch((error) => {
+                console.error('Failed to load navigation:', error);
+            });
 
             console.log('EPUB rendered successfully');
 
@@ -692,6 +712,60 @@ class BookReader {
                 usageEl.style.color = '#6b7280';
             }
         }
+    }
+
+    openTOC() {
+        document.getElementById('toc-sidebar').classList.add('open');
+        document.getElementById('toc-overlay').classList.add('visible');
+    }
+
+    closeTOC() {
+        document.getElementById('toc-sidebar').classList.remove('open');
+        document.getElementById('toc-overlay').classList.remove('visible');
+    }
+
+    loadTableOfContents(toc) {
+        const tocContent = document.getElementById('toc-content');
+
+        if (!toc || toc.length === 0) {
+            tocContent.innerHTML = '<p class="toc-loading">No chapters available</p>';
+            return;
+        }
+
+        // Recursively render TOC items
+        const renderTOCItems = (items, level = 0) => {
+            return items.map(item => {
+                const indent = level > 0 ? `style="padding-left: ${level * 1.5}rem;"` : '';
+                let html = `<a class="toc-item" data-href="${item.href}" ${indent}>${this.escapeHtml(item.label)}</a>`;
+
+                // Add sub-items if they exist
+                if (item.subitems && item.subitems.length > 0) {
+                    html += renderTOCItems(item.subitems, level + 1);
+                }
+
+                return html;
+            }).join('');
+        };
+
+        tocContent.innerHTML = renderTOCItems(toc);
+
+        // Add click handlers to all TOC items
+        tocContent.querySelectorAll('.toc-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                const href = e.target.dataset.href;
+                if (href && this.rendition) {
+                    this.rendition.display(href);
+                    this.closeTOC();
+                }
+            });
+        });
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 
