@@ -66,8 +66,8 @@ class BookReader {
 
     setupEventListeners() {
         // Back button
-        document.getElementById('back-btn').addEventListener('click', () => {
-            this.saveReadingPosition();
+        document.getElementById('back-btn').addEventListener('click', async () => {
+            await this.saveReadingPosition();
             window.location.href = 'index.html';
         });
 
@@ -492,8 +492,8 @@ class BookReader {
         document.getElementById('progress-fill').style.width = `${progress}%`;
     }
 
-    saveReadingPosition() {
-        storage.saveReadingPosition(this.bookId, {
+    async saveReadingPosition() {
+        await storage.saveReadingPosition(this.bookId, {
             paragraphIndex: this.currentParagraphIndex,
             totalParagraphs: this.currentParagraphs.length
         });
