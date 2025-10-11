@@ -224,108 +224,74 @@ class BookReader {
 
     async renderEPUB(container) {
         try {
-            // Check if JSZip is loaded
-            if (typeof JSZip === 'undefined') {
-                container.innerHTML = '<p>JSZip library not loaded. Please refresh the page.</p>';
+            const uint8Array = new Uint8Array(this.book.fileData);
+
+            // Check if epub.js is loaded
+            if (typeof ePub === 'undefined') {
+                container.innerHTML = '<p>EPUB library not loaded. Please refresh the page.</p>';
                 return;
             }
 
-            const uint8Array = new Uint8Array(this.book.fileData);
+            console.log('Loading EPUB with epub.js...');
 
-            // Load the EPUB as a ZIP file using JSZip
-            const zip = await JSZip.loadAsync(uint8Array);
+            // Create book instance from array buffer
+            const book = ePub(uint8Array.buffer);
 
-            // Find the container.xml file to get the content.opf location
-            const containerXml = await zip.file('META-INF/container.xml').async('text');
-            const parser = new DOMParser();
-            const containerDoc = parser.parseFromString(containerXml, 'text/xml');
-            const rootfilePath = containerDoc.querySelector('rootfile').getAttribute('full-path');
+            // Wait for book to be ready
+            await book.ready;
+            console.log('EPUB ready, loading spine...');
 
-            // Load the content.opf file
-            const contentOpf = await zip.file(rootfilePath).async('text');
-            const opfDoc = parser.parseFromString(contentOpf, 'text/xml');
+            // Wait for spine to load
+            const spine = await book.loaded.spine;
+            console.log(`Processing ${spine.items.length} spine items...`);
 
-            // Get the spine (reading order)
-            const spineItems = opfDoc.querySelectorAll('spine itemref');
-            const manifest = {};
-
-            // Build manifest map
-            opfDoc.querySelectorAll('manifest item').forEach(item => {
-                manifest[item.getAttribute('id')] = item.getAttribute('href');
+            // Extract text from all sections
+            const textPromises = [];
+            spine.each((item) => {
+                textPromises.push(
+                    item.load(book.load.bind(book)).then((doc) => {
+                        const text = doc.body.textContent || doc.body.innerText || '';
+                        console.log(`Extracted ${text.length} chars from ${item.href}`);
+                        item.unload();
+                        return text;
+                    }).catch(err => {
+                        console.warn(`Failed to load section ${item.href}:`, err);
+                        return '';
+                    })
+                );
             });
 
-            // Get the base path for content files
-            const basePath = rootfilePath.substring(0, rootfilePath.lastIndexOf('/') + 1);
+            const allTextSections = await Promise.all(textPromises);
+            console.log(`Total sections: ${allTextSections.length}`);
 
-            let allText = '';
+            // Join all text
+            const fullText = allTextSections.join('\n\n');
+            console.log(`Total extracted: ${fullText.length} characters`);
 
-            console.log(`Processing ${spineItems.length} spine items...`);
+            // Split into paragraphs (by double newlines or single newlines with meaningful content)
+            const paragraphs = fullText
+                .split(/\n\n+/)
+                .map(p => p.replace(/\n/g, ' ').trim())
+                .filter(p => p.length > 0);
 
-            // Extract text from each spine item
-            for (const itemref of spineItems) {
-                const idref = itemref.getAttribute('idref');
-                const href = manifest[idref];
+            console.log(`Created ${paragraphs.length} paragraphs`);
 
-                if (href) {
-                    try {
-                        const contentPath = basePath + href;
-                        const contentFile = zip.file(contentPath);
+            // Create HTML
+            let html = '';
+            paragraphs.forEach(para => {
+                html += `<p>${this.escapeHtml(para)}</p>`;
+            });
 
-                        if (contentFile) {
-                            const content = await contentFile.async('text');
-                            const contentDoc = parser.parseFromString(content, 'text/html');
-
-                            if (contentDoc.body) {
-                                const text = this.extractTextFromElement(contentDoc.body);
-                                console.log(`Extracted ${text.length} chars from ${href}`);
-                                allText += text;
-                            }
-                        } else {
-                            console.warn(`File not found: ${contentPath}`);
-                        }
-                    } catch (err) {
-                        console.warn('Error loading content file:', href, err);
-                    }
-                }
-            }
-
-            console.log(`Total extracted: ${allText.length} characters`);
-
-            if (allText.trim().length > 0) {
-                container.innerHTML = allText;
+            if (html.length > 0) {
+                container.innerHTML = html;
             } else {
                 container.innerHTML = '<p>Could not extract text from this EPUB file.</p>';
             }
+
         } catch (error) {
             console.error('Error rendering EPUB:', error);
             container.innerHTML = `<p>Error loading EPUB: ${error.message}. Please try a different file.</p>`;
         }
-    }
-
-    extractTextFromElement(element) {
-        let html = '';
-
-        // Process all paragraph elements
-        const paragraphs = element.querySelectorAll('p, h1, h2, h3, h4, h5, h6');
-
-        if (paragraphs.length > 0) {
-            paragraphs.forEach(p => {
-                const text = p.textContent.trim();
-                if (text.length > 0) {
-                    html += `<p>${this.escapeHtml(text)}</p>`;
-                }
-            });
-        } else {
-            // Fallback: extract all text and split by line breaks
-            const text = element.textContent || '';
-            const lines = text.split('\n').filter(line => line.trim().length > 20);
-
-            lines.forEach(line => {
-                html += `<p>${this.escapeHtml(line.trim())}</p>`;
-            });
-        }
-
-        return html;
     }
 
     escapeHtml(text) {
@@ -384,8 +350,7 @@ class BookReader {
             // Highlight current paragraph
             this.highlightParagraph(this.currentParagraphIndex);
 
-            // Get settings
-            const settings = storage.getSettings();
+            // Get current settings from UI
             const voiceId = document.getElementById('voice-select').value;
             const speed = parseFloat(document.getElementById('speed-select').value);
             const pitch = parseFloat(document.getElementById('pitch-select').value);
@@ -578,7 +543,6 @@ class BookReader {
 
         if (usageEl) {
             const percent = (usage.charactersUsed / 1000000) * 100;
-            const remaining = 1000000 - usage.charactersUsed;
 
             usageEl.textContent = `${usage.charactersUsed.toLocaleString()} / 1M chars (${percent.toFixed(1)}%)`;
 
