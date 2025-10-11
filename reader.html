@@ -14,6 +14,7 @@
             <button id="back-btn" class="icon-btn" title="Back to Library">← Library</button>
             <h1 id="book-title" class="book-title">Loading...</h1>
             <div class="header-controls">
+                <button id="settings-btn" class="icon-btn" title="Voice Settings">⚙️</button>
                 <button id="font-size-btn" class="icon-btn" title="Font Size">Aa</button>
                 <button id="theme-btn" class="icon-btn" title="Theme">☀</button>
             </div>
@@ -34,15 +35,28 @@
                 <button id="next-paragraph" class="control-btn" title="Next paragraph">⏭</button>
             </div>
 
-            <div class="control-row settings-controls">
-                <div class="control-group">
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Voice Settings Modal -->
+    <div id="settings-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Voice Settings</h2>
+                <button id="close-settings" class="close-btn">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-item">
                     <label for="voice-select">Voice:</label>
                     <select id="voice-select" class="voice-select">
                         <option>Loading voices...</option>
                     </select>
                 </div>
 
-                <div class="control-group">
+                <div class="setting-item">
                     <label for="speed-select">Speed:</label>
                     <select id="speed-select" class="speed-select">
                         <option value="0.5">0.5x</option>
@@ -55,7 +69,7 @@
                     </select>
                 </div>
 
-                <div class="control-group">
+                <div class="setting-item">
                     <label for="pitch-select">Pitch:</label>
                     <select id="pitch-select" class="pitch-select">
                         <option value="-5">-5</option>
@@ -68,10 +82,6 @@
                     </select>
                 </div>
             </div>
-
-            <div class="progress-bar">
-                <div id="progress-fill" class="progress-fill"></div>
-            </div>
         </div>
     </div>
 
@@ -81,6 +91,7 @@
     <script src="libs/pdf.min.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
     <script src="js/reader.js"></script>
 </body>
 </html>

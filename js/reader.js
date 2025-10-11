@@ -118,6 +118,22 @@ class BookReader {
             this.cycleTheme();
         });
 
+        // Settings modal
+        document.getElementById('settings-btn').addEventListener('click', () => {
+            document.getElementById('settings-modal').style.display = 'flex';
+        });
+
+        document.getElementById('close-settings').addEventListener('click', () => {
+            document.getElementById('settings-modal').style.display = 'none';
+        });
+
+        // Close modal when clicking outside
+        document.getElementById('settings-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'settings-modal') {
+                document.getElementById('settings-modal').style.display = 'none';
+            }
+        });
+
         // Save position before leaving
         window.addEventListener('beforeunload', () => {
             this.saveReadingPosition();
