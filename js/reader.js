@@ -88,6 +88,16 @@ class BookReader {
             });
         }
 
+        // TOC toggle button
+        const tocBtn = document.getElementById('show-Toc');
+        const sidebar = document.getElementById('sidebar');
+        if (tocBtn && sidebar) {
+            tocBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                sidebar.classList.toggle('open');
+            });
+        }
+
         // TTS Controls (removed from UI, keeping functions for future)
 
         // Speed control
