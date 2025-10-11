@@ -232,18 +232,14 @@ class BookReader {
                 return;
             }
 
-            console.log('Loading EPUB with epub.js...');
-
             // Create book instance from array buffer
             const book = ePub(uint8Array.buffer);
 
             // Wait for book to be ready
             await book.ready;
-            console.log('EPUB ready, loading spine...');
 
             // Wait for spine to load
             const spine = await book.loaded.spine;
-            console.log(`Processing ${spine.items.length} spine items...`);
 
             // Extract text from all sections
             const textPromises = [];
@@ -262,7 +258,6 @@ class BookReader {
                             console.warn(`Unknown document structure for ${item.href}`, doc);
                         }
 
-                        console.log(`Extracted ${text.length} chars from ${item.href}`);
                         item.unload();
                         return text;
                     }).catch(err => {
@@ -273,19 +268,15 @@ class BookReader {
             });
 
             const allTextSections = await Promise.all(textPromises);
-            console.log(`Total sections: ${allTextSections.length}`);
 
             // Join all text
             const fullText = allTextSections.join('\n\n');
-            console.log(`Total extracted: ${fullText.length} characters`);
 
             // Split into paragraphs (by double newlines or single newlines with meaningful content)
             const paragraphs = fullText
                 .split(/\n\n+/)
                 .map(p => p.replace(/\n/g, ' ').trim())
                 .filter(p => p.length > 0);
-
-            console.log(`Created ${paragraphs.length} paragraphs`);
 
             // Create HTML
             let html = '';
