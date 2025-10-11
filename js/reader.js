@@ -259,6 +259,8 @@ class BookReader {
 
             let allText = '';
 
+            console.log(`Processing ${spineItems.length} spine items...`);
+
             // Extract text from each spine item
             for (const itemref of spineItems) {
                 const idref = itemref.getAttribute('idref');
@@ -275,14 +277,19 @@ class BookReader {
 
                             if (contentDoc.body) {
                                 const text = this.extractTextFromElement(contentDoc.body);
+                                console.log(`Extracted ${text.length} chars from ${href}`);
                                 allText += text;
                             }
+                        } else {
+                            console.warn(`File not found: ${contentPath}`);
                         }
                     } catch (err) {
                         console.warn('Error loading content file:', href, err);
                     }
                 }
             }
+
+            console.log(`Total extracted: ${allText.length} characters`);
 
             if (allText.trim().length > 0) {
                 container.innerHTML = allText;
