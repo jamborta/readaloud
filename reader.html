@@ -71,27 +71,6 @@
             padding: 0 !important;
         }
 
-        /* Mobile overlay */
-        #sidebar-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 99;
-        }
-
-        #sidebar-overlay.visible {
-            display: block;
-        }
-
-        /* Ensure sidebar is above overlay */
-        #sidebar {
-            z-index: 100;
-        }
-
         /* Mobile responsive styles */
         @media (max-width: 768px) {
             /* Sidebar takes full width on mobile when open */
@@ -195,8 +174,6 @@
     </style>
 </head>
 <body>
-    <div id="sidebar-overlay"></div>
-
     <div id="sidebar">
         <div id="panels">
             <a id="show-Toc" class="show_view active" data-view="Toc">TOC</a>
