@@ -39,10 +39,17 @@
         .icon-cog::before { content: "⚙ "; }
         .icon-cancel-circled::before { content: "×"; font-size: 2rem; }
 
-        /* Close button styling */
+        /* Close button styling - far right */
         #close-book {
             font-size: 1.5rem;
             line-height: 1;
+            position: absolute;
+            right: 0.5rem;
+        }
+
+        /* Adjust title-controls to make room for close button */
+        #title-controls {
+            margin-right: 2.5rem;
         }
 
         #panels a, #title-controls a {
@@ -80,6 +87,85 @@
         body {
             margin: 0 !important;
             padding: 0 !important;
+        }
+
+        /* Mobile responsive styles */
+        @media (max-width: 768px) {
+            /* Sidebar takes full width on mobile when open */
+            #sidebar {
+                width: 80% !important;
+                max-width: 300px !important;
+            }
+
+            #sidebar.open {
+                left: 0 !important;
+            }
+
+            /* Main stays full width, sidebar overlays on mobile */
+            body:has(#sidebar.open) #main {
+                left: 0 !important;
+                width: 100% !important;
+            }
+
+            /* Titlebar adjustments */
+            #titlebar {
+                font-size: 0.9rem !important;
+                padding: 0.5rem !important;
+            }
+
+            #book-title {
+                font-size: 0.9rem !important;
+            }
+
+            #title-controls {
+                margin-right: 2rem !important;
+            }
+
+            #title-controls a {
+                padding: 0.4rem !important;
+                font-size: 0.85rem !important;
+            }
+
+            #close-book {
+                right: 0.25rem !important;
+                font-size: 1.2rem !important;
+            }
+
+            /* Arrows */
+            .arrow {
+                font-size: 3rem !important;
+                padding: 1rem 0.5rem !important;
+            }
+
+            /* Back button in sidebar */
+            #back-btn {
+                font-size: 0.85rem !important;
+                padding: 0.4rem 0.8rem !important;
+            }
+
+            /* TOC items */
+            .toc_link {
+                font-size: 0.9rem !important;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #titlebar {
+                font-size: 0.8rem !important;
+            }
+
+            #book-title {
+                font-size: 0.8rem !important;
+            }
+
+            #title-controls a {
+                font-size: 0.75rem !important;
+                padding: 0.3rem !important;
+            }
+
+            .arrow {
+                font-size: 2.5rem !important;
+            }
         }
     </style>
 </head>
