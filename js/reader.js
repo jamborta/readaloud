@@ -71,7 +71,10 @@ class BookReader {
     }
 
     setupUI() {
-        document.getElementById('book-title').textContent = this.book.title;
+        const titleElement = document.getElementById('book-title');
+        if (titleElement) {
+            titleElement.textContent = this.book.title;
+        }
     }
 
     setupEventListeners() {

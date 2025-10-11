@@ -243,6 +243,27 @@ html, body {
     color: #000;
 }
 
+/* Page Info */
+.page-info {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.85rem;
+    color: #999;
+    font-family: Georgia, serif;
+    z-index: 85;
+}
+
+.page-info .divider {
+    margin: 0 0.5rem;
+    opacity: 0.6;
+}
+
+#current-page {
+    font-weight: 600;
+}
+
 /* Responsive Adjustments */
 @media (max-width: 1024px) {
     #sidebar {
