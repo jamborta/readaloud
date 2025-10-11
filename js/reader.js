@@ -220,6 +220,14 @@ class BookReader {
         // Get all paragraphs
         this.currentParagraphs = Array.from(content.querySelectorAll('p'));
 
+        console.log(`Found ${this.currentParagraphs.length} paragraphs`);
+
+        if (this.currentParagraphs.length === 0) {
+            console.warn('No paragraphs found in book content');
+            content.innerHTML = '<p>No readable content found in this book.</p>';
+            return;
+        }
+
         // Add click handlers to paragraphs
         this.currentParagraphs.forEach((p, index) => {
             p.addEventListener('click', () => {
@@ -229,6 +237,13 @@ class BookReader {
 
         // Create pages
         this.createPages();
+
+        if (this.pages.length === 0) {
+            console.error('Failed to create pages');
+            // Show all paragraphs as fallback
+            this.currentParagraphs.forEach(p => p.style.display = 'block');
+            return;
+        }
 
         // Show first page
         this.showPage(0);
@@ -725,10 +740,25 @@ class BookReader {
     }
 
     showPage(pageIndex) {
-        if (pageIndex < 0 || pageIndex >= this.pages.length) return;
+        if (!this.pages || this.pages.length === 0) {
+            console.error('No pages available');
+            return;
+        }
+
+        if (pageIndex < 0 || pageIndex >= this.pages.length) {
+            console.warn(`Invalid page index: ${pageIndex}`);
+            return;
+        }
 
         this.currentPageIndex = pageIndex;
         const page = this.pages[pageIndex];
+
+        if (!page) {
+            console.error(`Page ${pageIndex} not found`);
+            return;
+        }
+
+        console.log(`Showing page ${pageIndex + 1}/${this.pages.length} (paragraphs ${page.startIndex}-${page.endIndex})`);
 
         // Hide all paragraphs
         this.currentParagraphs.forEach(p => p.style.display = 'none');
@@ -752,7 +782,7 @@ class BookReader {
         document.getElementById('book-page-content').scrollTop = 0;
 
         // Update progress bar
-        const progress = (pageIndex / (this.pages.length - 1)) * 100;
+        const progress = this.pages.length > 1 ? (pageIndex / (this.pages.length - 1)) * 100 : 100;
         document.getElementById('progress-fill').style.width = `${progress}%`;
     }
 
