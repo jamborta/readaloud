@@ -65,24 +65,6 @@
             font-size: 2rem;
         }
 
-        /* Back button */
-        #back-btn {
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.3);
-            color: #fff;
-            padding: 0.5rem 1rem;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            margin: 1rem;
-            display: block;
-            text-align: center;
-            text-decoration: none;
-        }
-        #back-btn:hover {
-            background: rgba(255,255,255,0.2);
-        }
-
         /* Remove body margin/padding */
         body {
             margin: 0 !important;
@@ -160,12 +142,6 @@
                 right: 0 !important;
             }
 
-            /* Back button in sidebar */
-            #back-btn {
-                font-size: 0.85rem !important;
-                padding: 0.4rem 0.8rem !important;
-            }
-
             /* TOC items */
             .toc_link {
                 font-size: 0.9rem !important;
@@ -199,9 +175,8 @@
 </head>
 <body>
     <div id="sidebar">
-        <a id="back-btn" href="index.html">← Back to Library</a>
         <div id="panels">
-            <a id="show-Toc" class="show_view icon-list-1 active" data-view="Toc">TOC</a>
+            <a id="show-Toc" class="show_view active" data-view="Toc">TOC</a>
         </div>
         <div id="tocView" class="view">
         </div>
@@ -219,7 +194,6 @@
             </div>
             <div id="title-controls">
                 <a id="close-book" title="Close Book">×</a>
-                <a id="setting" class="icon-cog">Settings</a>
             </div>
         </div>
 
@@ -228,67 +202,6 @@
         <div id="viewer"></div>
         <div id="next" class="arrow">›</div>
     </div>
-
-    <!-- Settings Modal -->
-    <div class="modal md-effect-1" id="settings-modal">
-        <div class="md-content">
-            <h3>Settings</h3>
-            <div>
-                <h4 style="margin-top: 1rem; margin-bottom: 0.5rem; font-size: 1rem; color: #666;">Reading</h4>
-                <p>
-                    <label for="theme-select">Theme:</label>
-                    <select id="theme-select" class="theme-select">
-                        <option value="light">Light</option>
-                        <option value="sepia">Sepia</option>
-                        <option value="dark">Dark</option>
-                    </select>
-                </p>
-                <p>
-                    <label for="font-size-select">Font Size:</label>
-                    <select id="font-size-select" class="font-size-select">
-                        <option value="small">Small</option>
-                        <option value="medium" selected>Medium</option>
-                        <option value="large">Large</option>
-                        <option value="x-large">Extra Large</option>
-                    </select>
-                </p>
-
-                <h4 style="margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 1rem; color: #666;">Voice (PDF only)</h4>
-                <p>
-                    <label for="voice-select">Voice:</label>
-                    <select id="voice-select" class="voice-select">
-                        <option>Loading voices...</option>
-                    </select>
-                </p>
-                <p>
-                    <label for="speed-select">Speed:</label>
-                    <select id="speed-select" class="speed-select">
-                        <option value="0.5">0.5x</option>
-                        <option value="0.75">0.75x</option>
-                        <option value="1" selected>1x</option>
-                        <option value="1.25">1.25x</option>
-                        <option value="1.5">1.5x</option>
-                        <option value="1.75">1.75x</option>
-                        <option value="2">2x</option>
-                    </select>
-                </p>
-                <p>
-                    <label for="pitch-select">Pitch:</label>
-                    <select id="pitch-select" class="pitch-select">
-                        <option value="-5">-5</option>
-                        <option value="-3">-3</option>
-                        <option value="-1">-1</option>
-                        <option value="0" selected>0</option>
-                        <option value="1">+1</option>
-                        <option value="3">+3</option>
-                        <option value="5">+5</option>
-                    </select>
-                </p>
-            </div>
-            <div class="closer icon-cancel-circled"></div>
-        </div>
-    </div>
-    <div class="overlay"></div>
 
     <!-- Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>

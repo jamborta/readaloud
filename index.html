@@ -17,6 +17,7 @@
                 <div class="auth-buttons">
                     <button id="login-btn" class="auth-btn" style="display: none;">Login</button>
                     <span id="username-display" class="username-display" style="display: none;"></span>
+                    <button id="settings-btn" class="auth-btn secondary">⚙ Settings</button>
                     <button id="logout-btn" class="auth-btn secondary" style="display: none;">Logout</button>
                 </div>
             </div>
@@ -41,6 +42,67 @@
             <p>Upload an EPUB or PDF to get started</p>
         </div>
     </div>
+
+    <!-- Settings Modal -->
+    <div class="settings-modal" id="settings-modal">
+        <div class="settings-content">
+            <h3>Settings</h3>
+            <div class="settings-body">
+                <h4>Reading</h4>
+                <p>
+                    <label for="theme-select">Theme:</label>
+                    <select id="theme-select" class="settings-select">
+                        <option value="light">Light</option>
+                        <option value="sepia">Sepia</option>
+                        <option value="dark">Dark</option>
+                    </select>
+                </p>
+                <p>
+                    <label for="font-size-select">Font Size:</label>
+                    <select id="font-size-select" class="settings-select">
+                        <option value="small">Small</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="large">Large</option>
+                        <option value="x-large">Extra Large</option>
+                    </select>
+                </p>
+
+                <h4>Voice (PDF only)</h4>
+                <p>
+                    <label for="voice-select">Voice:</label>
+                    <select id="voice-select" class="settings-select">
+                        <option>Loading voices...</option>
+                    </select>
+                </p>
+                <p>
+                    <label for="speed-select">Speed:</label>
+                    <select id="speed-select" class="settings-select">
+                        <option value="0.5">0.5x</option>
+                        <option value="0.75">0.75x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.25">1.25x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="1.75">1.75x</option>
+                        <option value="2">2x</option>
+                    </select>
+                </p>
+                <p>
+                    <label for="pitch-select">Pitch:</label>
+                    <select id="pitch-select" class="settings-select">
+                        <option value="-5">-5</option>
+                        <option value="-3">-3</option>
+                        <option value="-1">-1</option>
+                        <option value="0" selected>0</option>
+                        <option value="1">+1</option>
+                        <option value="3">+3</option>
+                        <option value="5">+5</option>
+                    </select>
+                </p>
+            </div>
+            <div class="settings-close">×</div>
+        </div>
+    </div>
+    <div class="settings-overlay"></div>
 
     <script src="js/storage.js?v=1.0.0"></script>
     <script src="js/api.js?v=1.0.0"></script>

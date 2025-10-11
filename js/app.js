@@ -168,6 +168,132 @@ function setupEventListeners() {
         hideAllContent();
         updateAuthUI();
     });
+
+    // Settings button and modal
+    setupSettingsModal();
+}
+
+// Setup settings modal
+function setupSettingsModal() {
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsModal = document.getElementById('settings-modal');
+    const settingsOverlay = document.querySelector('.settings-overlay');
+    const settingsClose = document.querySelector('.settings-close');
+
+    // Load voices if authenticated
+    if (ttsApi.isAuthenticated()) {
+        loadVoicesForSettings();
+    }
+
+    // Load current settings
+    loadSettingsUI();
+
+    // Open settings modal
+    settingsBtn.addEventListener('click', () => {
+        settingsModal.classList.add('active');
+        settingsOverlay.classList.add('active');
+        loadSettingsUI(); // Reload settings when opening modal
+    });
+
+    // Close settings modal
+    const closeModal = () => {
+        settingsModal.classList.remove('active');
+        settingsOverlay.classList.remove('active');
+    };
+
+    settingsClose.addEventListener('click', closeModal);
+    settingsOverlay.addEventListener('click', closeModal);
+
+    // Theme select
+    const themeSelect = document.getElementById('theme-select');
+    themeSelect.addEventListener('change', (e) => {
+        const theme = e.target.value;
+        storage.saveSettings({ theme });
+    });
+
+    // Font size select
+    const fontSizeSelect = document.getElementById('font-size-select');
+    fontSizeSelect.addEventListener('change', (e) => {
+        const fontSize = e.target.value;
+        storage.saveSettings({ fontSize });
+    });
+
+    // Voice select
+    const voiceSelect = document.getElementById('voice-select');
+    voiceSelect.addEventListener('change', (e) => {
+        storage.saveSettings({ voiceId: e.target.value });
+    });
+
+    // Speed select
+    const speedSelect = document.getElementById('speed-select');
+    speedSelect.addEventListener('change', (e) => {
+        const speed = parseFloat(e.target.value);
+        storage.saveSettings({ speed });
+    });
+
+    // Pitch select
+    const pitchSelect = document.getElementById('pitch-select');
+    pitchSelect.addEventListener('change', (e) => {
+        const pitch = parseFloat(e.target.value);
+        storage.saveSettings({ pitch });
+    });
+}
+
+// Load settings into UI
+function loadSettingsUI() {
+    const settings = storage.getSettings();
+
+    const themeSelect = document.getElementById('theme-select');
+    if (themeSelect) {
+        themeSelect.value = settings.theme || 'light';
+    }
+
+    const fontSizeSelect = document.getElementById('font-size-select');
+    if (fontSizeSelect) {
+        fontSizeSelect.value = settings.fontSize || 'medium';
+    }
+
+    const speedSelect = document.getElementById('speed-select');
+    if (speedSelect) {
+        speedSelect.value = settings.speed || 1.0;
+    }
+
+    const pitchSelect = document.getElementById('pitch-select');
+    if (pitchSelect) {
+        pitchSelect.value = settings.pitch || 0;
+    }
+
+    const voiceSelect = document.getElementById('voice-select');
+    if (voiceSelect && settings.voiceId) {
+        voiceSelect.value = settings.voiceId;
+    }
+}
+
+// Load voices for settings modal
+async function loadVoicesForSettings() {
+    try {
+        const voices = await ttsApi.getVoices();
+        const voiceSelect = document.getElementById('voice-select');
+
+        if (voices.length > 0) {
+            voiceSelect.innerHTML = voices.map(voice => {
+                return `<option value="${voice.id}">${voice.name}</option>`;
+            }).join('');
+
+            const settings = storage.getSettings();
+            if (settings.voiceId) {
+                voiceSelect.value = settings.voiceId;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load voices:', error);
+        const voiceSelect = document.getElementById('voice-select');
+        if (error.message.includes('login')) {
+            voiceSelect.innerHTML = '<option>Login to load voices</option>';
+        } else {
+            voiceSelect.innerHTML = '<option>Error loading voices</option>';
+        }
+    }
 }
 
 // Handle file upload

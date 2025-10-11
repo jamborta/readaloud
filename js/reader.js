@@ -63,10 +63,7 @@ class BookReader {
                 await this.loadVoices();
             } catch (error) {
                 console.error('Failed to load voices:', error);
-                document.getElementById('voice-select').innerHTML = '<option>Login to load voices</option>';
             }
-        } else {
-            document.getElementById('voice-select').innerHTML = '<option>Login to load voices</option>';
         }
     }
 
@@ -78,16 +75,6 @@ class BookReader {
     }
 
     setupEventListeners() {
-        // Back button
-        const backBtn = document.getElementById('back-btn');
-        if (backBtn) {
-            backBtn.addEventListener('click', async (e) => {
-                e.preventDefault();
-                await this.saveReadingPosition();
-                window.location.href = 'index.html';
-            });
-        }
-
         // Sidebar toggle - simple!
         const slider = document.getElementById('slider');
         const sidebar = document.getElementById('sidebar');
@@ -110,76 +97,6 @@ class BookReader {
         }
 
         // TTS Controls (removed from UI, keeping functions for future)
-
-        // Speed control
-        document.getElementById('speed-select').addEventListener('change', (e) => {
-            const speed = parseFloat(e.target.value);
-            storage.saveSettings({ speed });
-            this.audioCache.clear();
-        });
-
-        // Pitch control
-        document.getElementById('pitch-select').addEventListener('change', (e) => {
-            const pitch = parseFloat(e.target.value);
-            storage.saveSettings({ pitch });
-            this.audioCache.clear();
-        });
-
-        // Voice control
-        document.getElementById('voice-select').addEventListener('change', (e) => {
-            storage.saveSettings({ voiceId: e.target.value });
-            this.audioCache.clear();
-        });
-
-        // Theme control (in settings modal)
-        const themeSelect = document.getElementById('theme-select');
-        if (themeSelect) {
-            themeSelect.addEventListener('change', (e) => {
-                const theme = e.target.value;
-                document.body.setAttribute('data-theme', theme);
-                storage.saveSettings({ theme });
-                this.applyTheme();
-            });
-        }
-
-        // Font size control (in settings modal)
-        const fontSizeSelect = document.getElementById('font-size-select');
-        if (fontSizeSelect) {
-            fontSizeSelect.addEventListener('change', (e) => {
-                const fontSize = e.target.value;
-                document.body.setAttribute('data-font-size', fontSize);
-                storage.saveSettings({ fontSize });
-                this.applyTheme();
-            });
-        }
-
-        // Settings modal
-        const settingBtn = document.getElementById('setting');
-        const settingsModal = document.getElementById('settings-modal');
-        const overlay = document.querySelector('.overlay');
-        const closer = document.querySelector('.closer');
-
-        if (settingBtn && settingsModal) {
-            settingBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                settingsModal.classList.add('md-show');
-                overlay.classList.add('md-show');
-            });
-        }
-
-        if (closer) {
-            closer.addEventListener('click', () => {
-                settingsModal.classList.remove('md-show');
-                overlay.classList.remove('md-show');
-            });
-        }
-
-        if (overlay) {
-            overlay.addEventListener('click', () => {
-                settingsModal.classList.remove('md-show');
-                overlay.classList.remove('md-show');
-            });
-        }
 
         // Navigation arrows (for EPUB)
         document.getElementById('prev').addEventListener('click', () => {
@@ -216,38 +133,17 @@ class BookReader {
     async loadVoices() {
         try {
             this.voices = await ttsApi.getVoices();
-            const voiceSelect = document.getElementById('voice-select');
-
-            if (this.voices.length > 0) {
-                voiceSelect.innerHTML = this.voices.map(voice => {
-                    return `<option value="${voice.id}">${voice.name}</option>`;
-                }).join('');
-
-                const settings = storage.getSettings();
-                if (settings.voiceId) {
-                    voiceSelect.value = settings.voiceId;
-                }
-            }
+            // Voices are now loaded from the landing page settings
+            // Store them for use in TTS
         } catch (error) {
             console.error('Failed to load voices:', error);
-            if (error.message.includes('login')) {
-                document.getElementById('voice-select').innerHTML = '<option>Login to load voices</option>';
-            } else {
-                alert('Failed to load voices. Please check your internet connection and API configuration.');
-            }
         }
     }
 
     loadSettings() {
         const settings = storage.getSettings();
 
-        document.getElementById('speed-select').value = settings.speed || 1.0;
-        document.getElementById('pitch-select').value = settings.pitch || 0;
-
-        if (settings.voiceId) {
-            document.getElementById('voice-select').value = settings.voiceId;
-        }
-
+        // Apply theme and font size to the reader
         const fontSize = settings.fontSize || 'medium';
         document.body.setAttribute('data-font-size', fontSize);
 
@@ -470,7 +366,6 @@ class BookReader {
         }
 
         this.isPlaying = true;
-        document.getElementById('play-pause').textContent = '⏸';
 
         const paragraph = this.currentParagraphs[this.currentParagraphIndex];
         await this.speak(paragraph.textContent);
@@ -478,7 +373,6 @@ class BookReader {
 
     pause() {
         this.isPlaying = false;
-        document.getElementById('play-pause').textContent = '▶';
 
         if (this.currentAudio) {
             this.currentAudio.pause();
@@ -554,9 +448,10 @@ class BookReader {
             }
 
             const chunk = this.currentChunks[this.currentChunkIndex];
-            const voiceId = document.getElementById('voice-select').value;
-            const speed = parseFloat(document.getElementById('speed-select').value);
-            const pitch = parseFloat(document.getElementById('pitch-select').value);
+            const settings = storage.getSettings();
+            const voiceId = settings.voiceId || 'en-US-Standard-A';
+            const speed = settings.speed || 1.0;
+            const pitch = settings.pitch || 0;
 
             const cacheKey = `${voiceId}-${speed}-${pitch}-${chunk.substring(0, 50)}`;
 
