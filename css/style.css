@@ -234,27 +234,32 @@ header h1 {
 
 /* Reader Page Styles */
 .reader-body {
-    background-color: var(--bg-color);
+    background-color: #4e4e4e;
     color: var(--text-color);
+    min-height: 100vh;
 }
 
 .reader-container {
-    max-width: 900px;
+    max-width: none;
     margin: 0 auto;
-    padding-bottom: 140px; /* Space for controls */
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
 
 .reader-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem 1.5rem;
-    background: var(--card-bg);
-    border-bottom: 1px solid var(--border-color);
+    padding: 0.75rem 1.5rem;
+    background: rgba(255, 255, 255, 0.95);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
     position: sticky;
     top: 0;
     z-index: 100;
     gap: 0.75rem;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
 }
 
 .header-controls {
@@ -273,25 +278,26 @@ header h1 {
 }
 
 .icon-btn {
-    background: var(--bg-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: 0.6rem 1rem;
-    border-radius: 0.375rem;
+    background: transparent;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    color: #333;
+    padding: 0.5rem 0.9rem;
+    border-radius: 4px;
     cursor: pointer;
-    font-size: 1rem;
-    font-weight: 500;
+    font-size: 0.95rem;
+    font-weight: 400;
     transition: all 0.2s;
-    min-height: 44px; /* iOS touch target */
-    min-width: 44px;
+    min-height: 36px;
+    min-width: 36px;
 }
 
 .icon-btn:hover {
-    background: var(--border-color);
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.2);
 }
 
 .icon-btn:active {
-    transform: scale(0.95);
+    transform: scale(0.97);
 }
 
 /* EPUB.js Viewer */
@@ -299,21 +305,21 @@ header h1 {
     display: flex;
     align-items: center;
     justify-content: center;
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 2rem 0;
-    min-height: calc(100vh - 200px);
+    flex: 1;
+    padding: 3rem 1rem;
     position: relative;
 }
 
 #viewer-wrapper {
     flex: 1;
     max-width: 900px;
-    height: calc(100vh - 200px);
+    height: 100%;
     position: relative;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    background: var(--card-bg);
-    border-radius: 8px;
+    box-shadow:
+        0 10px 40px rgba(0, 0, 0, 0.3),
+        0 2px 8px rgba(0, 0, 0, 0.2);
+    background: #ffffff;
+    border-radius: 2px;
     overflow: hidden;
 }
 
@@ -325,47 +331,49 @@ header h1 {
 
 /* Navigation Arrows */
 .arrow {
-    font-size: 3rem;
-    color: var(--text-light);
+    font-size: 4rem;
+    color: rgba(255, 255, 255, 0.5);
     cursor: pointer;
     user-select: none;
-    padding: 1rem;
-    transition: all 0.2s;
-    opacity: 0.6;
-    min-width: 60px;
+    padding: 0 2rem;
+    transition: all 0.3s ease;
+    opacity: 0.7;
     text-align: center;
+    font-weight: 100;
 }
 
 .arrow:hover {
     opacity: 1;
-    color: var(--primary-color);
-    transform: scale(1.1);
+    color: rgba(255, 255, 255, 0.9);
+    transform: scale(1.05);
 }
 
 .arrow:active {
-    transform: scale(0.95);
+    transform: scale(0.98);
 }
 
 /* Page Navigation Info */
 .page-nav {
     text-align: center;
-    padding: 1rem;
-    max-width: 1200px;
-    margin: 0 auto;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .page-info-display {
-    font-size: 0.95rem;
-    color: var(--text-light);
-    font-weight: 500;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 400;
+    letter-spacing: 0.5px;
 }
 
 .page-info-display .divider {
     margin: 0 0.5rem;
+    opacity: 0.5;
 }
 
 #current-page {
-    color: var(--text-color);
+    color: rgba(255, 255, 255, 0.9);
     font-weight: 600;
 }
 
@@ -525,26 +533,24 @@ header h1 {
     }
 
     .epub-viewer {
-        padding: 1rem 0;
-        min-height: calc(100vh - 240px);
+        padding: 1.5rem 0.5rem;
     }
 
     #viewer-wrapper {
-        height: calc(100vh - 240px);
+        max-width: 100%;
     }
 
     .arrow {
-        font-size: 2rem;
-        padding: 0.5rem;
-        min-width: 40px;
+        font-size: 2.5rem;
+        padding: 0 1rem;
     }
 
     .page-nav {
-        padding: 0.5rem;
+        padding: 0.6rem;
     }
 
     .page-info-display {
-        font-size: 0.85rem;
+        font-size: 0.8rem;
     }
 
     .tts-controls {
