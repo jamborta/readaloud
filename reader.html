@@ -6,53 +6,45 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>ReadAloud - Reader</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/reader.css">
 </head>
 <body class="reader-body" data-theme="light" data-font-size="medium">
-    <div class="reader-container">
-        <header class="reader-header">
-            <div class="header-left">
-                <button id="toc-btn" class="icon-btn" title="Table of Contents">☰</button>
-                <button id="back-btn" class="icon-btn" title="Back to Library">← Library</button>
-            </div>
-            <h1 id="book-title" class="book-title">Loading...</h1>
-            <div class="header-controls">
-                <button id="settings-btn" class="icon-btn" title="Voice Settings">⚙️</button>
-                <button id="font-size-btn" class="icon-btn" title="Font Size">Aa</button>
-                <button id="theme-btn" class="icon-btn" title="Theme">☀</button>
-            </div>
-        </header>
 
-        <!-- Table of Contents Sidebar -->
-        <div id="toc-sidebar" class="toc-sidebar">
-            <div class="toc-header">
-                <h2>Table of Contents</h2>
-                <button id="toc-close" class="close-btn">×</button>
-            </div>
-            <div id="toc-content" class="toc-content">
-                <p class="toc-loading">Loading chapters...</p>
-            </div>
+    <!-- Permanent Sidebar -->
+    <div id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <button id="back-btn" class="sidebar-btn" title="Back to Library">← Library</button>
         </div>
-        <div id="toc-overlay" class="toc-overlay"></div>
-
-        <!-- EPUB.js Viewer -->
-        <div id="viewer" class="epub-viewer">
-            <div id="prev" class="arrow">‹</div>
-            <div id="viewer-wrapper">
-                <div id="area"></div>
-            </div>
-            <div id="next" class="arrow">›</div>
+        <div class="panels">
+            <button id="toc-toggle" class="panel-btn active">TABLE OF CONTENTS</button>
         </div>
+        <div id="toc-content" class="toc-view">
+            <p class="toc-loading">Loading...</p>
+        </div>
+    </div>
 
-        <!-- Page Controls -->
-        <div class="page-nav">
-            <div class="page-info-display">
-                <span id="current-page">Loading...</span>
-                <span class="divider">/</span>
-                <span id="total-pages">--</span>
+    <!-- Main Content Area -->
+    <div id="main" class="main">
+        <!-- Titlebar -->
+        <div id="titlebar" class="titlebar">
+            <div class="titlebar-center">
+                <h1 id="book-title" class="title">Loading...</h1>
+            </div>
+            <div class="titlebar-controls">
+                <button id="settings-btn" class="control-btn" title="Voice Settings">⚙</button>
+                <button id="font-size-btn" class="control-btn" title="Font Size">A</button>
+                <button id="theme-btn" class="control-btn" title="Theme">☀</button>
             </div>
         </div>
 
+        <!-- Navigation Arrows -->
+        <div id="prev" class="arrow prev-arrow">‹</div>
+        <div id="next" class="arrow next-arrow">›</div>
+
+        <!-- EPUB Viewer -->
+        <div id="viewer" class="viewer">
+            <div id="area"></div>
+        </div>
     </div>
 
     <!-- Voice Settings Modal -->
@@ -106,6 +98,6 @@
     <script src="js/storage.js?v=1.0.0"></script>
     <script src="js/api.js?v=1.0.0"></script>
     <script src="js/auth.js?v=1.0.0"></script>
-    <script src="js/reader.js?v=2.4.0"></script>
+    <script src="js/reader.js?v=3.0.0"></script>
 </body>
 </html>

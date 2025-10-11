@@ -1,0 +1,380 @@
+/* EPUB Reader Styles - Based on futurepress/epubjs-reader */
+
+/* Reset and Base */
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.reader-body {
+    font-family: Georgia, "Times New Roman", Times, serif;
+    background-color: #4e4e4e;
+    color: #4f4f4f;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Sidebar */
+#sidebar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 25%;
+    min-width: 300px;
+    background: #6b6b6b;
+    color: #fff;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+}
+
+.sidebar-header {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #fff;
+    padding: 0.5rem 1rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-family: Georgia, serif;
+    transition: all 0.2s;
+}
+
+.sidebar-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.panels {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.5rem 0;
+}
+
+.panel-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    font-family: Georgia, serif;
+    width: 100%;
+    text-align: left;
+    transition: all 0.2s;
+}
+
+.panel-btn:hover,
+.panel-btn.active {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.toc-view {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 0;
+}
+
+.toc-loading {
+    padding: 2rem 1rem;
+    color: rgba(255, 255, 255, 0.6);
+    text-align: center;
+    font-size: 0.9rem;
+    font-style: italic;
+}
+
+.toc-item {
+    display: block;
+    padding: 0.6rem 1.5rem;
+    color: rgba(255, 255, 255, 0.85);
+    text-decoration: none;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-left: 3px solid transparent;
+}
+
+.toc-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-left-color: #fff;
+    color: #fff;
+}
+
+.toc-item.active {
+    background: rgba(255, 255, 255, 0.15);
+    border-left-color: #fff;
+    color: #fff;
+    font-weight: 600;
+}
+
+/* Main Content Area */
+#main {
+    position: absolute;
+    left: 25%;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    min-width: 0;
+}
+
+/* Titlebar */
+.titlebar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 8%;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    z-index: 90;
+    padding: 0 2rem;
+}
+
+.titlebar-center {
+    flex: 1;
+    text-align: center;
+}
+
+.title {
+    font-family: Georgia, serif;
+    font-size: 1.1rem;
+    font-weight: 400;
+    color: #4f4f4f;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.titlebar-controls {
+    position: absolute;
+    right: 1.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 0.5rem;
+}
+
+.control-btn {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #ddd;
+    color: #4f4f4f;
+    padding: 0.4rem 0.8rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-family: Georgia, serif;
+    transition: all 0.2s;
+    min-width: 32px;
+    min-height: 32px;
+}
+
+.control-btn:hover {
+    background: #fff;
+    border-color: #bbb;
+}
+
+/* Viewer */
+.viewer {
+    position: absolute;
+    top: 8%;
+    left: 10%;
+    right: 10%;
+    bottom: 0;
+    width: 80%;
+    max-width: 1250px;
+    margin: 0 auto;
+    background: #fff;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+}
+
+#area {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* Navigation Arrows */
+.arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 64px;
+    font-weight: 100;
+    color: #E2E2E2;
+    cursor: pointer;
+    user-select: none;
+    z-index: 80;
+    transition: all 0.2s;
+    font-family: arial, sans-serif;
+    line-height: 1;
+    padding: 0 20px;
+}
+
+.prev-arrow {
+    left: 0;
+}
+
+.next-arrow {
+    right: 0;
+}
+
+.arrow:hover {
+    color: #777;
+}
+
+.arrow:active {
+    color: #000;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 1024px) {
+    #sidebar {
+        width: 300px;
+        min-width: 300px;
+    }
+
+    #main {
+        left: 300px;
+    }
+}
+
+@media (max-width: 768px) {
+    #sidebar {
+        width: 250px;
+        min-width: 250px;
+    }
+
+    #main {
+        left: 250px;
+    }
+
+    .viewer {
+        left: 5%;
+        right: 5%;
+        width: 90%;
+    }
+
+    .arrow {
+        font-size: 48px;
+        padding: 0 10px;
+    }
+}
+
+/* Settings Modal (reuse existing styles) */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    padding: 1rem;
+}
+
+.modal-content {
+    background: #fff;
+    border-radius: 0.5rem;
+    max-width: 500px;
+    width: 100%;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+    font-family: Georgia, serif;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 2rem;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.25rem;
+    transition: all 0.2s;
+}
+
+.close-btn:hover {
+    background: #e5e7eb;
+    color: #1f2937;
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.setting-item {
+    margin-bottom: 1.5rem;
+}
+
+.setting-item:last-child {
+    margin-bottom: 0;
+}
+
+.setting-item label {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #1f2937;
+    margin-bottom: 0.5rem;
+    font-family: Georgia, serif;
+}
+
+.setting-item select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.375rem;
+    background: #fff;
+    color: #1f2937;
+    font-size: 1rem;
+    cursor: pointer;
+    min-height: 44px;
+    font-family: Georgia, serif;
+}
+
+.setting-item select:focus {
+    outline: none;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}

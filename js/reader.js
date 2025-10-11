@@ -159,19 +159,6 @@ class BookReader {
         window.addEventListener('beforeunload', () => {
             this.saveReadingPosition();
         });
-
-        // TOC sidebar controls
-        document.getElementById('toc-btn').addEventListener('click', () => {
-            this.openTOC();
-        });
-
-        document.getElementById('toc-close').addEventListener('click', () => {
-            this.closeTOC();
-        });
-
-        document.getElementById('toc-overlay').addEventListener('click', () => {
-            this.closeTOC();
-        });
     }
 
     async loadVoices() {
@@ -714,16 +701,6 @@ class BookReader {
         }
     }
 
-    openTOC() {
-        document.getElementById('toc-sidebar').classList.add('open');
-        document.getElementById('toc-overlay').classList.add('visible');
-    }
-
-    closeTOC() {
-        document.getElementById('toc-sidebar').classList.remove('open');
-        document.getElementById('toc-overlay').classList.remove('visible');
-    }
-
     loadTableOfContents(toc) {
         const tocContent = document.getElementById('toc-content');
 
@@ -735,8 +712,9 @@ class BookReader {
         // Recursively render TOC items
         const renderTOCItems = (items, level = 0) => {
             return items.map(item => {
-                const indent = level > 0 ? `style="padding-left: ${level * 1.5}rem;"` : '';
-                let html = `<a class="toc-item" data-href="${item.href}" ${indent}>${this.escapeHtml(item.label)}</a>`;
+                const indent = level > 0 ? `style="padding-left: ${1.5 + (level * 0.75)}rem;"` : '';
+                const label = this.escapeHtml(item.label);
+                let html = `<a class="toc-item" data-href="${item.href}" ${indent}>${label}</a>`;
 
                 // Add sub-items if they exist
                 if (item.subitems && item.subitems.length > 0) {
@@ -755,8 +733,12 @@ class BookReader {
                 e.preventDefault();
                 const href = e.target.dataset.href;
                 if (href && this.rendition) {
+                    // Remove active class from all items
+                    tocContent.querySelectorAll('.toc-item').forEach(i => i.classList.remove('active'));
+                    // Add active class to clicked item
+                    e.target.classList.add('active');
+                    // Navigate to chapter
                     this.rendition.display(href);
-                    this.closeTOC();
                 }
             });
         });
