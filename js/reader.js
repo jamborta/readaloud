@@ -13,6 +13,13 @@ class BookReader {
     }
 
     async init() {
+        // Require authentication to access reader
+        if (!ttsApi.isAuthenticated()) {
+            alert('Please login to read books.');
+            window.location.href = 'index.html';
+            return;
+        }
+
         // Check if API is configured
         if (!ttsApi.isConfigured()) {
             alert('TTS API is not configured. Please update the API_URL in js/api.js');

@@ -6,18 +6,41 @@ async function init() {
     try {
         await storage.init();
         updateAuthUI();
-
-        // Sync books from backend if already logged in
-        if (ttsApi.isAuthenticated()) {
-            await storage.syncBooksFromBackend();
-        }
-
-        await loadLibrary();
         setupEventListeners();
+
+        // Require authentication - show only login if not authenticated
+        if (!ttsApi.isAuthenticated()) {
+            hideAllContent();
+            await authManager.requireAuth();
+            // After successful login, show content and load library
+            showAllContent();
+            await storage.syncBooksFromBackend();
+            await loadLibrary();
+            updateAuthUI();
+        } else {
+            // Already logged in - sync and load library
+            showAllContent();
+            await storage.syncBooksFromBackend();
+            await loadLibrary();
+        }
     } catch (error) {
         console.error('Failed to initialize app:', error);
         alert('Failed to initialize the application. Please refresh the page.');
     }
+}
+
+// Hide all content except auth UI
+function hideAllContent() {
+    document.querySelector('.upload-section').style.display = 'none';
+    document.getElementById('library-grid').style.display = 'none';
+    document.getElementById('empty-state').style.display = 'none';
+}
+
+// Show all content after authentication
+function showAllContent() {
+    document.querySelector('.upload-section').style.display = 'block';
+    document.getElementById('library-grid').style.display = 'grid';
+    document.getElementById('empty-state').style.display = 'flex';
 }
 
 // Update auth UI based on login status
@@ -131,10 +154,10 @@ function setupEventListeners() {
             await authManager.showAuthModal();
             updateAuthUI();
 
-            // Sync books from backend after login
+            // Show content and sync books from backend after login
+            showAllContent();
             await storage.syncBooksFromBackend();
-
-            await loadLibrary(); // Reload to show synced books
+            await loadLibrary();
         } catch (error) {
             console.error('Login failed:', error);
         }
@@ -142,6 +165,8 @@ function setupEventListeners() {
 
     logoutBtn.addEventListener('click', () => {
         authManager.logout();
+        hideAllContent();
+        updateAuthUI();
     });
 }
 
