@@ -21,7 +21,26 @@
         </header>
 
         <div id="reader-content" class="reader-content">
-            <!-- Book content will be rendered here -->
+            <div class="book-page">
+                <div id="book-page-content" class="book-page-content">
+                    <!-- Book content will be rendered here -->
+                </div>
+                <div class="page-number">
+                    <span id="page-number-display">Page 1</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-controls">
+            <button id="prev-page-btn" class="page-btn" title="Previous page">
+                ← Previous
+            </button>
+            <div class="page-info">
+                <span id="page-info-display">Page 1 of 1</span>
+            </div>
+            <button id="next-page-btn" class="page-btn" title="Next page">
+                Next →
+            </button>
         </div>
 
         <div class="tts-controls">
@@ -92,6 +111,6 @@
     <script src="js/storage.js?v=1.0.0"></script>
     <script src="js/api.js?v=1.0.0"></script>
     <script src="js/auth.js?v=1.0.0"></script>
-    <script src="js/reader.js?v=1.0.1"></script>
+    <script src="js/reader.js?v=1.1.0"></script>
 </body>
 </html>

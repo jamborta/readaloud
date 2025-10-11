@@ -43,11 +43,12 @@ A modern, hostable ebook reader with high-quality text-to-speech powered by Goog
 - IndexedDB for book storage
 - localStorage for settings and positions
 
-**Backend (Cloudflare Worker):**
-- Secure proxy for Google Cloud TTS API
-- Rate limiting and usage tracking
-- Audio response caching
-- CORS handling
+**Backend (FastAPI - Python):**
+- JWT authentication for secure access
+- Google Cloud TTS proxy with proper API key security
+- User management (register/login)
+- CORS handling for GitHub Pages
+- Package management with `uv`
 
 **API:**
 - Google Cloud Text-to-Speech API
@@ -68,34 +69,43 @@ A modern, hostable ebook reader with high-quality text-to-speech powered by Goog
    - Go to IAM & Admin → Quotas
    - Set limit to 1M characters/month
 
-### 2. Deploy Cloudflare Worker
+### 2. Setup FastAPI Backend
 
 ```bash
-# Install Wrangler CLI
-npm install -g wrangler
+# Navigate to backend directory
+cd backend
 
-# Navigate to worker directory
-cd worker
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Login to Cloudflare
-wrangler login
+# Install dependencies
+uv sync
 
-# Set your Google Cloud API key as a secret
-wrangler secret put GOOGLE_CLOUD_API_KEY
-# Paste your API key when prompted
+# Create environment file
+cp .env.example .env
 
-# Deploy the worker
-wrangler deploy
+# Generate a secure secret key
+openssl rand -hex 32
 
-# Note the worker URL (e.g., https://readaloud-tts-worker.YOUR_SUBDOMAIN.workers.dev)
+# Edit .env and add:
+# - SECRET_KEY (use the generated key above)
+# - GOOGLE_APPLICATION_CREDENTIALS (path to your Google Cloud credentials JSON)
+
+# Run the development server
+./run.sh
+
+# Note: Backend will run on http://localhost:8000
 ```
+
+See `backend/README.md` for detailed setup and deployment instructions.
 
 ### 3. Configure Frontend
 
 1. Open `js/api.js`
-2. Update the `WORKER_URL` with your Cloudflare Worker URL:
+2. Update the `API_URL` with your backend URL:
    ```javascript
-   const WORKER_URL = 'https://readaloud-tts-worker.YOUR_SUBDOMAIN.workers.dev';
+   const API_URL = 'http://localhost:8000'; // For development
+   // Or use your deployed backend URL for production
    ```
 
 ### 4. Deploy to GitHub Pages
@@ -118,10 +128,12 @@ git push -u origin main
 
 ### 5. Test
 
-1. Open your GitHub Pages URL in Safari on iPhone (or any browser)
-2. Upload a DRM-free EPUB or PDF file
-3. Click on the book to open the reader
-4. Press the play button to start text-to-speech
+1. Make sure the backend is running (`./backend/run.sh`)
+2. Open `index.html` in your browser (or your GitHub Pages URL)
+3. Upload a DRM-free EPUB or PDF file
+4. Click on the book to open the reader
+5. Press the play button - you'll be prompted to login/register
+6. After authentication, text-to-speech will work
 
 ## Usage
 
@@ -173,17 +185,19 @@ readaloud/
 │   ├── app.js             # Library management
 │   ├── reader.js          # Reading & TTS control
 │   ├── storage.js         # IndexedDB & localStorage
-│   └── api.js             # Cloudflare Worker API client
+│   ├── api.js             # Backend API client
+│   └── auth.js            # Authentication UI & logic
 │
 ├── libs/
 │   ├── pdf.min.js         # PDF.js library
 │   └── pdf.worker.min.js  # PDF.js worker
 │
-└── worker/
-    ├── index.js           # Cloudflare Worker code
-    ├── wrangler.toml      # Worker configuration
-    ├── .env.example       # API key template
-    └── README.md          # Worker setup guide
+└── backend/
+    ├── main.py            # FastAPI application
+    ├── run.sh             # Startup script
+    ├── pyproject.toml     # Python dependencies (uv)
+    ├── .env.example       # Environment variables template
+    └── README.md          # Backend setup guide
 ```
 
 ## Browser Support
@@ -270,16 +284,20 @@ readaloud/
 - No analytics or tracking
 
 ### API Security
-- API key never exposed to frontend
-- Secured in Cloudflare Worker environment variables
-- Rate limiting prevents abuse
-- CORS restricts access to your domain
+- **JWT Authentication**: Secure token-based authentication required for all TTS operations
+- **Password Hashing**: User passwords hashed with bcrypt
+- **API Key Protection**: Google Cloud API key never exposed to frontend
+- **Token Expiration**: JWT tokens expire after 30 minutes
+- **CORS Protection**: Restricted to specific domains
+- **User Isolation**: Each user requires their own account
 
 ### Recommendations
-- Update CORS headers in `worker/index.js` to your domain only
-- Consider adding authentication for production use
-- Rotate API keys periodically
+- Update CORS headers in `backend/main.py` to match your frontend domain
+- Use a strong, randomly generated `SECRET_KEY` in production
+- Consider implementing a proper database for user storage
 - Monitor usage in Google Cloud Console
+- Set up rate limiting for API endpoints
+- Use HTTPS for production deployment
 
 ## Customization
 
@@ -294,7 +312,7 @@ Edit `css/style.css` CSS variables:
 ```
 
 ### Add More Voices
-Edit `worker/index.js` in the `handleGetVoices()` function to add voices from [Google's voice list](https://cloud.google.com/text-to-speech/docs/voices).
+Edit `backend/main.py` in the `get_voices()` function to add voices from [Google's voice list](https://cloud.google.com/text-to-speech/docs/voices).
 
 ### Change Font Family
 Edit `css/style.css`:
@@ -331,14 +349,16 @@ Set spending limits in Google Cloud Console.
 ### Local Testing
 
 ```bash
-# Test Cloudflare Worker locally
-cd worker
-wrangler dev
+# Run backend
+cd backend
+./run.sh
 
-# Serve frontend locally (use any static server)
-python3 -m http.server 8000
+# In another terminal, serve frontend locally
+python3 -m http.server 8080
 # Or
-npx serve
+npx serve -p 8080
+
+# Open http://localhost:8080 in your browser
 ```
 
 ### Making Changes
@@ -370,10 +390,11 @@ MIT License - Free to use, modify, and distribute.
 
 ## Support
 
-- Issues: [GitHub Issues](https://github.com/YOUR_USERNAME/readaloud/issues)
-- Docs: This README
+- Issues: [GitHub Issues](https://github.com/jamborta/readaloud/issues)
+- Docs: This README and `backend/README.md`
 - Google Cloud TTS Docs: https://cloud.google.com/text-to-speech/docs
-- Cloudflare Workers Docs: https://developers.cloudflare.com/workers
+- FastAPI Docs: https://fastapi.tiangolo.com/
+- uv Docs: https://docs.astral.sh/uv/
 
 ---
 

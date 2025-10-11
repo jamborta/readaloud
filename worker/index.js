@@ -12,7 +12,7 @@ const MAX_CHARS_PER_REQUEST = 5000;
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://jamborta.github.io', // Only your domain
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
 };
 
 addEventListener('fetch', event => {
@@ -47,6 +47,12 @@ async function handleRequest(request) {
 }
 
 async function handleSynthesize(request) {
+  // Check API key authentication
+  const authHeader = request.headers.get('X-API-Key');
+  if (!authHeader || authHeader !== API_KEY) {
+    return jsonResponse({ error: 'Unauthorized' }, 401);
+  }
+
   // Check rate limit
   const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
   const rateLimitKey = `ratelimit:${clientIP}`;
