@@ -15,6 +15,11 @@ class BookReader {
         this.currentChunks = [];
         this.currentChunkIndex = 0;
         this.currentLocation = null;
+        this.currentHighlightElement = null;
+        this.savePositionTimeout = null;
+        this.pageAdvanceFailures = 0;
+        this.lastExtractedText = null;
+        this.lastSectionIndex = null;
     }
 
     async init() {
@@ -96,7 +101,23 @@ class BookReader {
             });
         }
 
-        // TTS Controls (removed from UI, keeping functions for future)
+        // TTS Controls
+        const ttsControls = document.getElementById('tts-controls');
+        if (ttsControls) {
+            ttsControls.style.display = 'flex';
+
+            document.getElementById('play-pause').addEventListener('click', () => {
+                this.togglePlayPause();
+            });
+
+            document.getElementById('prev-paragraph').addEventListener('click', () => {
+                this.previousParagraph();
+            });
+
+            document.getElementById('next-paragraph').addEventListener('click', () => {
+                this.nextParagraph();
+            });
+        }
 
         // Navigation arrows (for EPUB)
         document.getElementById('prev').addEventListener('click', () => {
@@ -133,8 +154,7 @@ class BookReader {
     async loadVoices() {
         try {
             this.voices = await ttsApi.getVoices();
-            // Voices are now loaded from the landing page settings
-            // Store them for use in TTS
+            console.log('Voices loaded:', this.voices.length);
         } catch (error) {
             console.error('Failed to load voices:', error);
         }
@@ -180,10 +200,27 @@ class BookReader {
             });
 
             // Track location changes first
-            this.rendition.on('relocated', (location) => {
+            this.rendition.on('relocated', async (location) => {
                 this.currentLocation = location.start.cfi;
                 this.updatePageDisplay();
-                this.saveReadingPosition();
+
+                // Debounce position saving - only save after 3 seconds of no page changes
+                // Don't save during active playback (will save when stopped)
+                if (this.savePositionTimeout) {
+                    clearTimeout(this.savePositionTimeout);
+                }
+
+                if (!this.isPlaying) {
+                    this.savePositionTimeout = setTimeout(() => {
+                        this.saveReadingPosition();
+                    }, 3000);
+                }
+
+                // Clear old highlight when page changes
+                this.removeHighlight();
+
+                // Extract text for TTS when page changes
+                await this.extractCurrentPageText();
             });
 
             // Display the book
@@ -217,12 +254,157 @@ class BookReader {
                 console.error('Failed to load navigation:', error);
             });
 
+            // Extract initial page text after a short delay to ensure relocated event has fired
+            setTimeout(async () => {
+                await this.extractCurrentPageText();
+                console.log('Initial text extraction complete');
+            }, 500);
+
             console.log('EPUB rendered successfully');
 
         } catch (error) {
             console.error('Error rendering EPUB:', error);
             document.getElementById('area').innerHTML = `<p style="padding: 2rem;">Error loading EPUB: ${error.message}. Please try a different file.</p>`;
         }
+    }
+
+    async extractCurrentPageText() {
+        try {
+            if (!this.rendition || !this.epubBook) {
+                console.error('❌ Rendition or book not ready');
+                return;
+            }
+
+            const location = this.rendition.currentLocation();
+            if (!location || !location.start || !location.end) {
+                console.error('❌ No location available');
+                return;
+            }
+
+            console.log('📍 Extracting text from current page...');
+
+            try {
+                const startCfi = location.start.cfi;
+                const endCfi = location.end.cfi;
+
+                // Use proper CFI range method from EPUB.js community (THIS WORKED!)
+                const rangeCfi = this.makeRangeCfi(startCfi, endCfi);
+                const range = await this.epubBook.getRange(rangeCfi);
+
+                if (!range) {
+                    console.warn('⚠️ getRange() returned null');
+                    this.currentParagraphs = [];
+                    return;
+                }
+
+                const visibleText = range.toString();
+
+                if (visibleText.length === 0) {
+                    console.warn('⚠️ Range returned empty text');
+                    this.currentParagraphs = [];
+                    return;
+                }
+
+                console.log(`✅ Got ${visibleText.length} characters from CFI range`);
+
+                // Split into paragraphs by sentence groups
+                const paragraphs = visibleText.split(/\n\n+/);
+                const paragraphData = [];
+
+                paragraphs.forEach(para => {
+                    const trimmed = para.trim().replace(/\s+/g, ' ');
+                    if (trimmed.length >= 30) {
+                        paragraphData.push({ textContent: trimmed });
+                    }
+                });
+
+                // If we got very few paragraphs, split by sentences instead
+                if (paragraphData.length < 2) {
+                    paragraphData.length = 0;
+                    const sentences = visibleText.split(/(?<=[.!?])\s+/);
+                    let currentPara = '';
+
+                    sentences.forEach(sentence => {
+                        const trimmed = sentence.trim();
+                        if (!trimmed) return;
+
+                        if (currentPara.length + trimmed.length < 500) {
+                            currentPara += (currentPara ? ' ' : '') + trimmed;
+                        } else {
+                            if (currentPara.length >= 30) {
+                                paragraphData.push({ textContent: currentPara });
+                            }
+                            currentPara = trimmed;
+                        }
+                    });
+
+                    if (currentPara.length >= 30) {
+                        paragraphData.push({ textContent: currentPara });
+                    }
+                }
+
+                this.currentParagraphs = paragraphData;
+                this.currentParagraphIndex = 0;
+
+                // Track for loop detection
+                const firstParagraphText = paragraphData.length > 0 ? paragraphData[0].textContent : null;
+                this.lastExtractedText = firstParagraphText;
+                this.lastSectionIndex = location.start.index;
+
+                console.log(`✅ Extracted ${this.currentParagraphs.length} paragraphs`);
+
+                if (this.currentParagraphs.length > 0) {
+                    console.log('📖 First:', this.currentParagraphs[0].textContent.substring(0, 80) + '...');
+                }
+
+            } catch (error) {
+                console.error('❌ CFI extraction failed:', error);
+                this.currentParagraphs = [];
+            }
+
+        } catch (error) {
+            console.error('❌ CRITICAL ERROR in extractCurrentPageText:', error);
+            this.currentParagraphs = [];
+        }
+    }
+
+    makeRangeCfi(a, b) {
+        const CFI = new ePub.CFI();
+        const start = CFI.parse(a);
+        const end = CFI.parse(b);
+
+        const cfi = {
+            range: true,
+            base: start.base,
+            path: {
+                steps: [],
+                terminal: null
+            },
+            start: start.path,
+            end: end.path
+        };
+
+        const len = cfi.start.steps.length;
+        for (let i = 0; i < len; i++) {
+            if (CFI.equalStep(cfi.start.steps[i], cfi.end.steps[i])) {
+                if (i == len - 1) {
+                    if (cfi.start.terminal === cfi.end.terminal) {
+                        cfi.path.steps.push(cfi.start.steps[i]);
+                        cfi.range = false;
+                    }
+                } else {
+                    cfi.path.steps.push(cfi.start.steps[i]);
+                }
+            } else break;
+        }
+
+        cfi.start.steps = cfi.start.steps.slice(cfi.path.steps.length);
+        cfi.end.steps = cfi.end.steps.slice(cfi.path.steps.length);
+
+        return 'epubcfi(' + CFI.segmentString(cfi.base) + '!' +
+            CFI.segmentString(cfi.path) + ',' +
+            CFI.segmentString(cfi.start) + ',' +
+            CFI.segmentString(cfi.end) + ')';
     }
 
     async renderPDF() {
@@ -347,10 +529,30 @@ class BookReader {
     }
 
     async play() {
-        // TTS for PDF only for now
-        if (this.book.fileType !== 'pdf' || this.currentParagraphs.length === 0) {
-            alert('Text-to-speech is currently only available for PDF files.');
-            return;
+        // Reset failure counter when starting playback
+        this.pageAdvanceFailures = 0;
+
+        // Try to extract text if we don't have any
+        if (this.currentParagraphs.length === 0) {
+            console.log('No paragraphs loaded, attempting extraction...');
+
+            // Wait a bit for the book to be fully ready
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await this.extractCurrentPageText();
+
+            // Still no paragraphs? Try one more time after a longer delay
+            if (this.currentParagraphs.length === 0) {
+                console.log('First extraction failed, trying again...');
+                await new Promise(resolve => setTimeout(resolve, 700));
+                await this.extractCurrentPageText();
+            }
+
+            // Still no paragraphs? Stop.
+            if (this.currentParagraphs.length === 0) {
+                console.error('Could not extract any text from the current page');
+                alert('Could not extract text from this page. Please try navigating to a different page or wait a moment and try again.');
+                return;
+            }
         }
 
         if (this.isLoadingAudio) return;
@@ -366,13 +568,22 @@ class BookReader {
         }
 
         this.isPlaying = true;
+        const playPauseBtn = document.getElementById('play-pause');
+        if (playPauseBtn) {
+            playPauseBtn.textContent = '⏸';
+        }
 
         const paragraph = this.currentParagraphs[this.currentParagraphIndex];
-        await this.speak(paragraph.textContent);
+        const text = paragraph.textContent || paragraph;
+        await this.speak(text);
     }
 
     pause() {
         this.isPlaying = false;
+        const playPauseBtn = document.getElementById('play-pause');
+        if (playPauseBtn) {
+            playPauseBtn.textContent = '▶';
+        }
 
         if (this.currentAudio) {
             this.currentAudio.pause();
@@ -381,6 +592,9 @@ class BookReader {
 
         this.currentChunks = [];
         this.currentChunkIndex = 0;
+
+        // Save position when pausing
+        this.saveReadingPosition();
     }
 
     splitTextIntoChunks(text, maxChunkSize = 4500) {
@@ -510,7 +724,9 @@ class BookReader {
             this.currentParagraphIndex--;
 
             if (this.isPlaying) {
-                this.speak(this.currentParagraphs[this.currentParagraphIndex].textContent);
+                const paragraph = this.currentParagraphs[this.currentParagraphIndex];
+                const text = paragraph.textContent || paragraph;
+                this.speak(text);
             } else {
                 this.highlightParagraph(this.currentParagraphIndex);
             }
@@ -520,14 +736,138 @@ class BookReader {
     async nextParagraph() {
         if (this.currentParagraphIndex < this.currentParagraphs.length - 1) {
             this.currentParagraphIndex++;
+            this.pageAdvanceFailures = 0; // Reset failure counter on successful paragraph advance
 
             if (this.isPlaying) {
-                await this.speak(this.currentParagraphs[this.currentParagraphIndex].textContent);
+                const paragraph = this.currentParagraphs[this.currentParagraphIndex];
+                const text = paragraph.textContent || paragraph;
+                await this.speak(text);
             } else {
                 this.highlightParagraph(this.currentParagraphIndex);
             }
         } else {
-            this.pause();
+            // At the end of current page paragraphs
+            if (this.book.fileType === 'epub' && this.rendition) {
+                // Check if we have any paragraphs - if not, stop
+                if (this.currentParagraphs.length === 0) {
+                    console.warn('No text extracted from page, stopping playback');
+                    this.pause();
+                    alert('Could not extract text from this page. TTS has been stopped.');
+                    return;
+                }
+
+                // Check if we've failed too many times in a row
+                if (this.pageAdvanceFailures >= 10) {
+                    console.error('Failed to advance pages 10 times in a row, stopping to prevent infinite loop');
+                    this.pause();
+                    alert('Unable to continue reading. You may have reached the end of the book.');
+                    this.pageAdvanceFailures = 0;
+                    return;
+                }
+
+                // Store current location before moving
+                const currentCfi = this.currentLocation;
+                console.log('At end of page, attempting to move forward. Attempt:', this.pageAdvanceFailures + 1);
+
+                // Move to next page in EPUB
+                const moved = this.rendition.next();
+
+                if (!moved) {
+                    console.log('Reached end of book');
+                    this.pause();
+                    alert('Reached the end of the book!');
+                    this.pageAdvanceFailures = 0;
+                    return;
+                }
+
+                this.currentParagraphIndex = 0;
+
+                if (this.isPlaying) {
+                    // Wait for page to load and check if we actually moved
+                    setTimeout(() => {
+                        // Check if location actually changed
+                        if (this.currentLocation === currentCfi) {
+                            console.warn('Did not advance to new page (CFI unchanged)');
+                            this.pageAdvanceFailures++;
+
+                            // Try to advance again if we haven't hit the limit
+                            if (this.pageAdvanceFailures < 3) {
+                                console.log('Attempting to advance again...');
+                                this.nextParagraph();
+                            } else {
+                                this.pause();
+                                alert('Cannot advance further. Stopping playback.');
+                                this.pageAdvanceFailures = 0;
+                            }
+                            return;
+                        }
+
+                        // Check if we're stuck (same section AND same text)
+                        const currentLocation = this.rendition.currentLocation();
+                        if (currentLocation && currentLocation.start && this.lastSectionIndex !== null) {
+                            const currentSectionIndex = currentLocation.start.index;
+                            const currentFirstParagraph = this.currentParagraphs.length > 0 ? this.currentParagraphs[0].textContent : null;
+
+                            // ONLY force section jump if BOTH section AND text are the same
+                            if (currentSectionIndex === this.lastSectionIndex &&
+                                currentFirstParagraph === this.lastExtractedText &&
+                                currentFirstParagraph !== null) {
+
+                                console.warn(`Still in same section ${currentSectionIndex} AND same text after page turn - forcing jump to next section`);
+
+                                // Get the next section
+                                const nextSection = this.epubBook.spine.get(currentSectionIndex + 1);
+                                if (nextSection) {
+                                    console.log(`Jumping to next section: ${nextSection.href}`);
+                                    this.rendition.display(nextSection.href);
+
+                                    // Wait for new content to be extracted
+                                    setTimeout(() => {
+                                        if (this.currentParagraphs.length > 0 && this.isPlaying) {
+                                            const paragraph = this.currentParagraphs[0];
+                                            const text = paragraph.textContent || paragraph;
+                                            this.speak(text);
+                                        } else {
+                                            console.warn('No text in next section');
+                                            this.nextParagraph();
+                                        }
+                                    }, 800);
+                                } else {
+                                    console.log('No more sections - reached end of book');
+                                    this.pause();
+                                    alert('Reached the end of the book!');
+                                }
+                                return;
+                            }
+                        }
+
+                        // Successfully moved to new page with new content
+                        this.pageAdvanceFailures = 0;
+
+                        if (this.currentParagraphs.length > 0) {
+                            const paragraph = this.currentParagraphs[0];
+                            const text = paragraph.textContent || paragraph;
+                            this.speak(text);
+                        } else {
+                            // Still no paragraphs after page turn
+                            console.warn('No text on next page');
+                            this.pageAdvanceFailures++;
+
+                            // Try to advance again
+                            if (this.pageAdvanceFailures < 3) {
+                                console.log('No text found, trying next page...');
+                                this.nextParagraph();
+                            } else {
+                                this.pause();
+                                alert('No text found on next pages. Stopping playback.');
+                                this.pageAdvanceFailures = 0;
+                            }
+                        }
+                    }, 800);
+                }
+            } else {
+                this.pause();
+            }
         }
     }
 
@@ -535,7 +875,9 @@ class BookReader {
         this.currentParagraphIndex = index;
 
         if (this.isPlaying) {
-            this.speak(this.currentParagraphs[this.currentParagraphIndex].textContent);
+            const paragraph = this.currentParagraphs[this.currentParagraphIndex];
+            const text = paragraph.textContent || paragraph;
+            this.speak(text);
         } else {
             this.highlightParagraph(this.currentParagraphIndex);
         }
@@ -544,12 +886,137 @@ class BookReader {
     highlightParagraph(index) {
         if (this.currentParagraphs.length === 0) return;
 
-        this.currentParagraphs.forEach(p => p.classList.remove('active-paragraph'));
+        // Remove previous highlight
+        this.removeHighlight();
 
         if (this.currentParagraphs[index]) {
             const paragraph = this.currentParagraphs[index];
-            paragraph.classList.add('active-paragraph');
-            paragraph.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            // For EPUB mode - directly access iframe and highlight text
+            if (this.book.fileType === 'epub' && this.rendition) {
+                try {
+                    console.log('Highlighting paragraph:', paragraph.textContent.substring(0, 50) + '...');
+
+                    // Get the rendered iframe
+                    const iframe = document.querySelector('#viewer iframe');
+                    if (!iframe || !iframe.contentDocument) {
+                        console.warn('Could not access iframe');
+                        return;
+                    }
+
+                    const doc = iframe.contentDocument;
+                    const textToFind = paragraph.textContent.trim();
+
+                    // Find the text in the document using a text walker
+                    this.highlightTextInIframe(doc, textToFind);
+
+                } catch (e) {
+                    console.error('Could not highlight paragraph:', e);
+                }
+            }
+
+            // For PDF mode - use classList
+            if (paragraph.classList) {
+                this.currentParagraphs.forEach(p => {
+                    if (p.classList) {
+                        p.classList.remove('active-paragraph');
+                    }
+                });
+                paragraph.classList.add('active-paragraph');
+                paragraph.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }
+
+    highlightTextInIframe(doc, searchText) {
+        if (!doc || !doc.body) {
+            console.warn('❌ No doc or body for highlighting');
+            return;
+        }
+
+        console.log('🔍 Searching for text to highlight:', searchText.substring(0, 100));
+
+        // Normalize search text for comparison
+        const normalizeText = (text) => text.trim().replace(/\s+/g, ' ').toLowerCase();
+        const normalizedSearch = normalizeText(searchText);
+
+        // Try to find matching element - be more flexible with matching
+        const allElements = doc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, div, span, section, article');
+
+        console.log('🔍 Checking', allElements.length, 'elements');
+
+        for (const el of allElements) {
+            const elementText = el.textContent.trim();
+            const normalizedElement = normalizeText(elementText);
+
+            // Strategy 1: Exact match (case-insensitive, whitespace normalized)
+            if (normalizedSearch === normalizedElement) {
+                console.log('✅ Found exact match!');
+                this.applyHighlight(el);
+                return;
+            }
+
+            // Strategy 2: Match first 50 chars
+            const compareLength = Math.min(50, normalizedSearch.length, normalizedElement.length);
+            if (compareLength > 20 && normalizedSearch.substring(0, compareLength) === normalizedElement.substring(0, compareLength)) {
+                console.log('✅ Found match by first 50 chars!');
+                this.applyHighlight(el);
+                return;
+            }
+
+            // Strategy 3: Element contains the search text
+            if (normalizedElement.includes(normalizedSearch) && normalizedSearch.length > 20) {
+                console.log('✅ Found match - element contains search text!');
+                this.applyHighlight(el);
+                return;
+            }
+
+            // Strategy 4: Search text contains the element (for short elements)
+            if (normalizedSearch.includes(normalizedElement) && normalizedElement.length > 20) {
+                console.log('✅ Found match - search contains element text!');
+                this.applyHighlight(el);
+                return;
+            }
+        }
+
+        console.warn('❌ Could not find matching element to highlight for:', searchText.substring(0, 50));
+    }
+
+    applyHighlight(el) {
+        el.style.backgroundColor = 'rgba(255, 255, 0, 0.4)';
+        el.style.transition = 'background-color 0.3s ease';
+        el.setAttribute('data-tts-highlight', 'true');
+
+        // Store reference for removal
+        this.currentHighlightElement = el;
+
+        // Scroll into view
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        console.log('✅ Highlighted element:', el.tagName, 'Text:', el.textContent.substring(0, 100));
+    }
+
+    removeHighlight() {
+        try {
+            // Remove direct element highlighting
+            if (this.currentHighlightElement) {
+                this.currentHighlightElement.style.backgroundColor = '';
+                this.currentHighlightElement.removeAttribute('data-tts-highlight');
+                this.currentHighlightElement = null;
+            }
+
+            // Also clean up any leftover highlights in iframe
+            const iframe = document.querySelector('#viewer iframe');
+            if (iframe && iframe.contentDocument) {
+                const doc = iframe.contentDocument;
+                const highlighted = doc.querySelectorAll('[data-tts-highlight]');
+                highlighted.forEach(el => {
+                    el.style.backgroundColor = '';
+                    el.removeAttribute('data-tts-highlight');
+                });
+            }
+        } catch (e) {
+            console.warn('Could not remove highlight:', e);
         }
     }
 

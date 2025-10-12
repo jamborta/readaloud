@@ -71,6 +71,49 @@
             padding: 0 !important;
         }
 
+        /* TTS Controls */
+        .tts-controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(255, 255, 255, 0.95);
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+            padding: 0.75rem 1rem;
+            z-index: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .tts-btn {
+            background: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            cursor: pointer;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .tts-btn:hover {
+            background: #4338ca;
+            transform: scale(1.05);
+        }
+
+        .tts-play-btn {
+            width: 52px;
+            height: 52px;
+            font-size: 1.25rem;
+        }
+
         /* Mobile responsive styles */
         @media (max-width: 768px) {
             /* Sidebar takes full width on mobile when open */
@@ -201,6 +244,13 @@
         <div id="prev" class="arrow">‹</div>
         <div id="viewer"></div>
         <div id="next" class="arrow">›</div>
+    </div>
+
+    <!-- TTS Controls -->
+    <div id="tts-controls" class="tts-controls" style="display: none;">
+        <button id="prev-paragraph" class="tts-btn" title="Previous paragraph">⏮</button>
+        <button id="play-pause" class="tts-btn tts-play-btn" title="Play/Pause">▶</button>
+        <button id="next-paragraph" class="tts-btn" title="Next paragraph">⏭</button>
     </div>
 
     <!-- Libraries -->
