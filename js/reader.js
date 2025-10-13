@@ -327,7 +327,7 @@ class BookReader {
 
                 const paragraphData = [];
                 const MAX_CHUNK_SIZE = 300;
-                const MIN_CHUNK_SIZE = 50;
+                const MIN_CHUNK_SIZE = 5;
 
                 let node;
                 let nodeIndex = 0;
@@ -335,7 +335,7 @@ class BookReader {
                     const originalText = node.textContent;
                     const nodeText = originalText.replace(/\s+/g, ' ').trim();
 
-                    // Skip empty text nodes
+                    // Skip tiny text nodes (< 5 chars)
                     if (nodeText.length < MIN_CHUNK_SIZE) continue;
 
                     nodeIndex++;
