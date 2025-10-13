@@ -322,17 +322,26 @@ class BookReader {
                 const MAX_CHUNK_SIZE = 300;
                 const MIN_CHUNK_SIZE = 50;
 
-                sentences.forEach(sentence => {
+                console.log(`🔬 SENTENCE SPLIT DEBUG: Found ${sentences.length} sentences`);
+
+                sentences.forEach((sentence, idx) => {
                     const trimmed = sentence.trim();
                     if (!trimmed) return;
 
+                    console.log(`  Sentence ${idx}: "${trimmed.substring(0, 40)}..." (${trimmed.length} chars)`);
+
                     // If adding this sentence would exceed max size, save current chunk and start new one
                     if (currentChunk.length > 0 && (currentChunk.length + trimmed.length + 1) > MAX_CHUNK_SIZE) {
+                        console.log(`    → Would exceed limit (${currentChunk.length} + ${trimmed.length} + 1 = ${currentChunk.length + trimmed.length + 1} > 300)`);
                         if (currentChunk.length >= MIN_CHUNK_SIZE) {
+                            console.log(`    → Saving chunk: "${currentChunk.substring(0, 40)}..." (${currentChunk.length} chars)`);
                             paragraphData.push({ textContent: currentChunk });
+                        } else {
+                            console.log(`    → DROPPED chunk (too small: ${currentChunk.length} < 50)`);
                         }
                         currentChunk = trimmed;
                     } else {
+                        console.log(`    → Adding to current chunk (now ${currentChunk.length + trimmed.length + 1} chars)`);
                         // Add sentence to current chunk
                         currentChunk += (currentChunk ? ' ' : '') + trimmed;
                     }
@@ -340,7 +349,10 @@ class BookReader {
 
                 // Don't forget the last chunk
                 if (currentChunk.length >= MIN_CHUNK_SIZE) {
+                    console.log(`  → Saving final chunk: "${currentChunk.substring(0, 40)}..." (${currentChunk.length} chars)`);
                     paragraphData.push({ textContent: currentChunk });
+                } else {
+                    console.log(`  → DROPPED final chunk (too small: ${currentChunk.length} < 50)`);
                 }
 
                 this.currentParagraphs = paragraphData;
@@ -352,6 +364,12 @@ class BookReader {
                 this.lastSectionIndex = location.start.index;
 
                 console.log(`✅ Extracted ${this.currentParagraphs.length} paragraphs`);
+
+                // DEBUG: Show all chunks
+                console.log('📝 CHUNKS DEBUG:');
+                paragraphData.forEach((chunk, idx) => {
+                    console.log(`  Chunk ${idx}: "${chunk.textContent.substring(0, 60)}..." (${chunk.textContent.length} chars)`);
+                });
 
             } catch (error) {
                 console.error('❌ CFI extraction failed:', error);
@@ -898,29 +916,175 @@ class BookReader {
             const doc = iframe.contentDocument;
             const allElements = doc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, div, span, section, article');
 
-            // Search for matching element
+            const searchText = textToFind.replace(/\s+/g, ' ');
+
+            // DEBUG: Show what we're searching for
+            console.log(`🔍 HIGHLIGHT DEBUG [Chunk ${index}/${this.currentParagraphs.length - 1}]:`);
+            console.log(`  Full search text (${searchText.length} chars):`, searchText);
+            console.log('🔍 Total elements to check:', allElements.length);
+
+            // DIAGNOSTIC: Check if "WAY BACK" is in the search text
+            if (searchText.includes('WAY BACK')) {
+                console.log('✅ DIAGNOSTIC: Search text CONTAINS "WAY BACK"');
+            } else {
+                console.log('❌ DIAGNOSTIC: Search text does NOT contain "WAY BACK"');
+            }
+
+            // DIAGNOSTIC: Show all elements that contain "WAY BACK"
+            let elementsWithWayBack = 0;
             for (const el of allElements) {
                 const elementText = el.textContent.trim().replace(/\s+/g, ' ');
-                const searchText = textToFind.replace(/\s+/g, ' ');
+                if (elementText.includes('WAY BACK')) {
+                    elementsWithWayBack++;
+                    console.log(`  📍 Element ${elementsWithWayBack} contains "WAY BACK":`, elementText.substring(0, 80) + '...');
+                }
+            }
+            console.log(`  Total elements containing "WAY BACK": ${elementsWithWayBack}`);
+
+            // Two-pass matching: First look for elements that START with our text,
+            // then use Range API to find specific text within elements
+
+            // Pass 1: Look for elements that start with our search text
+            let elementIndex = 0;
+            for (const el of allElements) {
+                const elementText = el.textContent.trim().replace(/\s+/g, ' ');
+                if (elementText.length === 0) continue;
 
                 // Strategy 1: Exact match
                 if (elementText === searchText) {
+                    console.log(`✅ MATCHED Strategy 1 (exact) at element ${elementIndex}:`, elementText.substring(0, 50) + '...');
                     this.applyHighlight(el);
                     return;
                 }
 
-                // Strategy 2: Match first 100 chars
-                if (searchText.length > 50 && elementText.startsWith(searchText.substring(0, 100))) {
+                // Strategy 2: Element starts with our search text (element might be longer)
+                if (elementText.startsWith(searchText)) {
+                    console.log(`✅ MATCHED Strategy 2 (element starts with search) at element ${elementIndex}:`, elementText.substring(0, 50) + '...');
                     this.applyHighlight(el);
                     return;
                 }
 
-                // Strategy 3: Element contains search text
-                if (elementText.includes(searchText) && searchText.length > 30) {
+                // Strategy 3: Search text starts with element (search might span multiple elements)
+                if (searchText.startsWith(elementText) && elementText.length > 20) {
+                    console.log(`✅ MATCHED Strategy 3 (search starts with element) at element ${elementIndex}:`, elementText.substring(0, 50) + '...');
                     this.applyHighlight(el);
                     return;
+                }
+
+                // Strategy 4: Element starts with first 50+ chars of search
+                if (searchText.length > 50) {
+                    const searchPrefix = searchText.substring(0, 50);
+                    if (elementText.startsWith(searchPrefix)) {
+                        console.log(`✅ MATCHED Strategy 4 (starts with 50 chars) at element ${elementIndex}:`, elementText.substring(0, 50) + '...');
+                        this.applyHighlight(el);
+                        return;
+                    }
+                }
+
+                elementIndex++;
+            }
+
+            // Pass 2: Use Range API to find specific text within elements
+            console.log('🔍 Pass 1 failed, trying Range API to find text...');
+            if (this.highlightTextWithRange(doc, searchText)) {
+                console.log('✅ Found and highlighted text using Range API');
+                return;
+            }
+
+            console.log('❌ No matching element found');
+        }
+    }
+
+    highlightTextWithRange(doc, searchText) {
+        try {
+            // Find the text node that contains our search text
+            const walker = doc.createTreeWalker(
+                doc.body,
+                NodeFilter.SHOW_TEXT,
+                null
+            );
+
+            console.log('📋 RANGE API DEBUG: Text nodes in document:');
+            let nodeCount = 0;
+            let node;
+            while (node = walker.nextNode()) {
+                const nodeText = node.textContent.replace(/\s+/g, ' ').trim();
+                if (nodeText.length > 0) {
+                    nodeCount++;
+                    console.log(`  Text node ${nodeCount}: "${nodeText.substring(0, 60)}..." (${nodeText.length} chars)`);
                 }
             }
+            console.log(`  Total text nodes: ${nodeCount}`);
+
+            // Try multiple segments of the search text (sliding window)
+            const SEARCH_SIZE = 50;
+            const STEP_SIZE = 50;
+
+            for (let offset = 0; offset < searchText.length; offset += STEP_SIZE) {
+                const searchFor = searchText.substring(offset, Math.min(offset + SEARCH_SIZE, searchText.length));
+
+                // Skip if segment too short
+                if (searchFor.trim().length < 20) {
+                    continue;
+                }
+
+                console.log(`🔍 Trying segment at offset ${offset}: "${searchFor.substring(0, 40)}..."`);
+
+                // Reset walker for each attempt
+                const walker2 = doc.createTreeWalker(
+                    doc.body,
+                    NodeFilter.SHOW_TEXT,
+                    null
+                );
+
+                while (node = walker2.nextNode()) {
+                    const nodeText = node.textContent.replace(/\s+/g, ' ');
+                    const index = nodeText.indexOf(searchFor);
+
+                    if (index !== -1) {
+                        console.log(`✅ Found at offset ${offset} in text node!`);
+
+                        // Calculate how much of the chunk to highlight
+                        // We want to highlight from the found position to the end of the chunk,
+                        // or as much as fits in this text node
+                        const remainingChunk = searchText.substring(offset);
+                        const highlightLength = Math.min(remainingChunk.length, node.textContent.length - index);
+
+                        console.log(`  Highlighting ${highlightLength} chars (chunk has ${remainingChunk.length} remaining, node has ${node.textContent.length - index} available)`);
+
+                        // Create a range and wrap it in a highlighted span
+                        const range = doc.createRange();
+                        range.setStart(node, index);
+                        range.setEnd(node, index + highlightLength);
+
+                        // Create highlight span
+                        const highlightSpan = doc.createElement('span');
+                        highlightSpan.style.backgroundColor = 'rgba(255, 255, 0, 0.3)';
+                        highlightSpan.style.transition = 'background-color 0.2s ease';
+                        highlightSpan.setAttribute('data-tts-highlight', 'true');
+
+                        try {
+                            range.surroundContents(highlightSpan);
+                            this.currentHighlightElement = highlightSpan;
+
+                            // Scroll into view
+                            highlightSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            return true;
+                        } catch (e) {
+                            // surroundContents can fail if range spans multiple elements
+                            console.log('Could not wrap range:', e);
+                            // Continue trying other offsets
+                            break;
+                        }
+                    }
+                }
+            }
+
+            console.log('❌ Could not find any segment in text nodes');
+            return false;
+        } catch (error) {
+            console.error('Error in highlightTextWithRange:', error);
+            return false;
         }
     }
 
@@ -935,7 +1099,22 @@ class BookReader {
 
     removeHighlight() {
         if (this.currentHighlightElement) {
-            this.currentHighlightElement.style.backgroundColor = '';
+            // Check if this is a span we created with Range API
+            if (this.currentHighlightElement.hasAttribute &&
+                this.currentHighlightElement.hasAttribute('data-tts-highlight')) {
+                // Remove the span and put the text back
+                const parent = this.currentHighlightElement.parentNode;
+                if (parent) {
+                    const doc = this.currentHighlightElement.ownerDocument;
+                    const textNode = doc.createTextNode(this.currentHighlightElement.textContent);
+                    parent.replaceChild(textNode, this.currentHighlightElement);
+                    // Normalize to merge adjacent text nodes
+                    parent.normalize();
+                }
+            } else {
+                // Regular element highlight
+                this.currentHighlightElement.style.backgroundColor = '';
+            }
             this.currentHighlightElement = null;
         }
     }
