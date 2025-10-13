@@ -20,8 +20,11 @@ class BookReader {
         this.pageAdvanceFailures = 0;
         this.lastExtractedText = null;
         this.lastSectionIndex = null;
-        this.chapterAudio = null; // {audioUrl, chunkTimings: [{chunkId, startTime}], duration}
+        this.chunkAudioCache = new Map(); // chunkId -> audioUrl
         this.currentChapterIndex = null;
+        this.isGeneratingChapterAudio = false;
+        this.chapterChunks = []; // All chunks for entire chapter
+        this.currentPageChunkOffset = 0; // Where current page starts in chapter
     }
 
     async init() {
@@ -288,12 +291,14 @@ class BookReader {
             console.log('📍 Extracting text from current page...');
 
             try {
-                // Check if we moved to a different chapter - clear chapter audio if so
+                // Check if we moved to a different chapter - clear chunk audio cache if so
                 const newChapterIndex = location.start.index;
                 if (this.currentChapterIndex !== null && this.currentChapterIndex !== newChapterIndex) {
-                    console.log(`Moved from chapter ${this.currentChapterIndex} to ${newChapterIndex}, clearing chapter audio`);
-                    this.chapterAudio = null;
+                    console.log(`Moved from chapter ${this.currentChapterIndex} to ${newChapterIndex}, clearing chunk audio cache`);
+                    this.chunkAudioCache.clear();
                     this.currentChapterIndex = null;
+                    this.chapterChunks = [];
+                    this.currentPageChunkOffset = 0;
 
                     // Reset button icon
                     const btn = document.getElementById('generate-chapter');
@@ -405,6 +410,31 @@ class BookReader {
                 this.lastSectionIndex = location.start.index;
 
                 console.log(`✅ Extracted ${this.currentParagraphs.length} paragraphs from current page`);
+
+                // Calculate page offset in chapter chunks (if chapter audio is cached)
+                if (this.currentChapterIndex === newChapterIndex && this.chapterChunks.length > 0) {
+                    // Find where this page starts in the chapter by matching normalized text
+                    const firstPageText = (paragraphData[0]?.textContent || '').replace(/\s+/g, ' ').trim();
+                    this.currentPageChunkOffset = 0;
+
+                    // Try to find a match with first 100 chars (normalized)
+                    const searchText = firstPageText.substring(0, 100).replace(/\s+/g, ' ').trim();
+
+                    for (let i = 0; i < this.chapterChunks.length; i++) {
+                        const normalizedChunk = this.chapterChunks[i].replace(/\s+/g, ' ').trim();
+                        if (normalizedChunk.includes(searchText) || searchText.includes(normalizedChunk.substring(0, 100))) {
+                            this.currentPageChunkOffset = i;
+                            console.log(`📍 Page starts at chapter chunk ${i} (matched: "${searchText.substring(0, 30)}...")`);
+                            break;
+                        }
+                    }
+
+                    if (this.currentPageChunkOffset === 0 && firstPageText) {
+                        console.warn(`⚠️ Could not find page offset in chapter chunks, defaulting to 0`);
+                    }
+                } else {
+                    this.currentPageChunkOffset = 0;
+                }
 
                 // Check if chapter audio exists for this chapter
                 await this.checkForExistingChapterAudio(newChapterIndex);
@@ -708,47 +738,33 @@ class BookReader {
             this.isLoadingAudio = true;
             this.highlightParagraph(this.currentParagraphIndex);
 
-            // Check if we have chapter audio available
+            // Check if we have cached chunk audio available
             const location = this.rendition ? this.rendition.currentLocation() : null;
             const currentChapterIndex = location && location.start ? location.start.index : null;
-            const hasChapterAudio = this.chapterAudio &&
-                                   this.currentChapterIndex === currentChapterIndex &&
-                                   this.chapterAudio.audioUrl;
 
-            if (hasChapterAudio) {
-                // Use chapter audio with seeking
-                console.log(`Using chapter audio for chunk ${this.currentParagraphIndex}`);
+            // Calculate absolute chapter chunk index
+            const chapterChunkIndex = this.currentPageChunkOffset + this.currentParagraphIndex;
+            const hasChunkAudio = this.currentChapterIndex === currentChapterIndex &&
+                                 this.chunkAudioCache.has(chapterChunkIndex);
 
-                // Find timing for current chunk
-                const timing = this.chapterAudio.chunkTimings.find(
-                    t => t.chunkId === this.currentParagraphIndex
-                );
-
-                if (!timing) {
-                    console.warn(`No timing found for chunk ${this.currentParagraphIndex}, falling back to on-demand TTS`);
-                    return await this.speakWithOnDemandTTS(text, isNewParagraph);
-                }
+            if (hasChunkAudio) {
+                // Use cached chunk audio
+                const audioUrl = this.chunkAudioCache.get(chapterChunkIndex);
+                console.log(`Using cached audio for chunk ${chapterChunkIndex} (page offset: ${this.currentPageChunkOffset}, page index: ${this.currentParagraphIndex})`);
 
                 // Stop current audio if playing
                 if (this.currentAudio) {
                     this.currentAudio.pause();
                 }
 
-                // Load chapter audio if not already loaded or if different audio
-                if (!this.currentAudio || this.currentAudio.src !== this.chapterAudio.audioUrl) {
-                    console.log(`Loading chapter audio from ${this.chapterAudio.audioUrl}`);
-                    this.currentAudio = new Audio(this.chapterAudio.audioUrl);
+                // Load chunk audio
+                this.currentAudio = new Audio(audioUrl);
 
-                    this.currentAudio.onerror = (error) => {
-                        console.error('Chapter audio playback error:', error);
-                        this.pause();
-                        alert('Error playing chapter audio. Try generating again.');
-                    };
-                }
-
-                // Seek to chunk start time
-                this.currentAudio.currentTime = timing.startTime;
-                console.log(`Seeking to ${timing.startTime.toFixed(2)}s for chunk ${this.currentParagraphIndex}`);
+                this.currentAudio.onerror = (error) => {
+                    console.error('Chunk audio playback error:', error);
+                    this.pause();
+                    alert('Error playing chunk audio. Try regenerating.');
+                };
 
                 // Set up ended handler to move to next chunk
                 this.currentAudio.onended = () => {
@@ -756,30 +772,6 @@ class BookReader {
                         this.nextParagraph();
                     }
                 };
-
-                // For chapter audio, we need to manually stop at next chunk's start time
-                // Find next chunk timing
-                const nextTiming = this.chapterAudio.chunkTimings.find(
-                    t => t.chunkId === this.currentParagraphIndex + 1
-                );
-
-                if (nextTiming) {
-                    // Set up a timeout to stop at the next chunk
-                    const duration = nextTiming.startTime - timing.startTime;
-                    console.log(`Will play for ${duration.toFixed(2)}s until next chunk`);
-
-                    setTimeout(() => {
-                        if (this.currentAudio && this.isPlaying &&
-                            this.currentParagraphIndex === timing.chunkId) {
-                            // Stop and move to next paragraph
-                            this.currentAudio.pause();
-                            this.nextParagraph();
-                        }
-                    }, duration * 1000);
-                } else {
-                    // Last chunk - let it play to end
-                    console.log('Last chunk in chapter audio');
-                }
 
                 await this.currentAudio.play();
 
@@ -861,22 +853,38 @@ class BookReader {
         }
 
         try {
-            console.log(`Checking for existing chapter audio for chapter ${chapterIndex}...`);
-            const result = await ttsApi.getChapterAudio(this.book.backendId, chapterIndex);
+            console.log(`Checking for existing chunk audio for chapter ${chapterIndex}...`);
 
-            if (result && result.audioUrl) {
-                console.log(`✅ Found existing chapter audio for chapter ${chapterIndex}`);
-                this.chapterAudio = result;
-                this.currentChapterIndex = chapterIndex;
+            // Check if first chunk exists (quick check to see if chapter has audio)
+            if (this.currentParagraphs.length > 0) {
+                const result = await ttsApi.getChunkAudio(this.book.backendId, chapterIndex, 0);
 
-                // Update button to indicate chapter audio is available
-                const btn = document.getElementById('generate-chapter');
-                if (btn) {
-                    btn.textContent = '✅';
-                    btn.title = 'Chapter audio ready (click to regenerate)';
+                if (result && result.audioUrl) {
+                    console.log(`✅ Found existing chunk audio for chapter ${chapterIndex}`);
+
+                    // Load all existing chunk audio URLs into cache
+                    this.chunkAudioCache.clear();
+                    for (let i = 0; i < this.currentParagraphs.length; i++) {
+                        const chunkResult = await ttsApi.getChunkAudio(this.book.backendId, chapterIndex, i);
+                        if (chunkResult && chunkResult.audioUrl) {
+                            this.chunkAudioCache.set(i, chunkResult.audioUrl);
+                        } else {
+                            // Missing chunk, stop loading
+                            break;
+                        }
+                    }
+
+                    this.currentChapterIndex = chapterIndex;
+
+                    // Update button to indicate chapter audio is available
+                    const btn = document.getElementById('generate-chapter');
+                    if (btn) {
+                        btn.textContent = '✓';
+                        btn.title = 'Chapter audio ready (click to regenerate)';
+                    }
+                } else {
+                    console.log(`No existing chunk audio for chapter ${chapterIndex}`);
                 }
-            } else {
-                console.log(`No existing chapter audio for chapter ${chapterIndex}`);
             }
         } catch (error) {
             console.error('Failed to check for existing chapter audio:', error);
@@ -895,11 +903,6 @@ class BookReader {
             return;
         }
 
-        if (this.currentParagraphs.length === 0) {
-            alert('No text available. Please wait for the page to load.');
-            return;
-        }
-
         // Get current chapter index
         const location = this.rendition.currentLocation();
         if (!location || !location.start) {
@@ -908,20 +911,66 @@ class BookReader {
         }
 
         const chapterIndex = location.start.index;
-        console.log(`Generating audio for chapter ${chapterIndex}...`);
-
-        // Format chunks for backend (with chunkId)
-        const chunks = this.currentParagraphs.map((para, index) => ({
-            chunkId: index,
-            text: para.textContent || para
-        }));
+        const btn = document.getElementById('generate-chapter');
 
         try {
-            // Disable button during generation
-            const btn = document.getElementById('generate-chapter');
+            this.isGeneratingChapterAudio = true;
+
             if (btn) {
                 btn.disabled = true;
-                btn.textContent = '⏳';
+                btn.textContent = 'Loading...';
+            }
+
+            // Get the entire chapter's content
+            const section = this.epubBook.spine.get(chapterIndex);
+            if (!section) {
+                alert('Could not load chapter');
+                return;
+            }
+
+            // Load the section and extract all text
+            await section.load(this.epubBook.load.bind(this.epubBook));
+            const sectionDoc = section.document;
+
+            if (!sectionDoc || !sectionDoc.body) {
+                alert('Could not read chapter content');
+                return;
+            }
+
+            // Extract all text from the chapter
+            const allText = sectionDoc.body.textContent;
+
+            // Chunk the text (same logic as extractCurrentPageText)
+            const chunks = [];
+            const MAX_CHUNK_SIZE = 300;
+            const MIN_CHUNK_SIZE = 5;
+
+            const sentences = allText.split(/(?<=[.!?])\s+/);
+            let currentChunk = '';
+
+            sentences.forEach((sentence) => {
+                const trimmed = sentence.trim();
+                if (!trimmed) return;
+
+                if (currentChunk.length > 0 && (currentChunk.length + trimmed.length + 1) > MAX_CHUNK_SIZE) {
+                    if (currentChunk.length >= MIN_CHUNK_SIZE) {
+                        chunks.push(currentChunk);
+                    }
+                    currentChunk = trimmed;
+                } else {
+                    currentChunk += (currentChunk ? ' ' : '') + trimmed;
+                }
+            });
+
+            // Save last chunk
+            if (currentChunk.length >= MIN_CHUNK_SIZE) {
+                chunks.push(currentChunk);
+            }
+
+            console.log(`Generating audio for ${chunks.length} chunks in chapter ${chapterIndex}...`);
+
+            if (btn) {
+                btn.textContent = '0%';
             }
 
             // Get settings
@@ -930,39 +979,59 @@ class BookReader {
             const speed = settings.speed || 1.0;
             const pitch = settings.pitch || 0;
 
-            // Generate chapter audio
-            const result = await ttsApi.generateChapterAudio(
-                this.book.backendId,
-                chapterIndex,
-                chunks,
-                voiceId,
-                speed,
-                pitch
-            );
+            // Clear old cache
+            this.chunkAudioCache.clear();
 
-            // Store chapter audio data
-            this.chapterAudio = result;
+            // Generate audio for each chunk with rate limiting
+            for (let i = 0; i < chunks.length; i++) {
+                const text = chunks[i];
+
+                // Update progress
+                const progress = Math.round((i / chunks.length) * 100);
+                if (btn) {
+                    btn.textContent = `${progress}%`;
+                }
+
+                const result = await ttsApi.generateChunkAudio(
+                    this.book.backendId,
+                    chapterIndex,
+                    i,
+                    text,
+                    voiceId,
+                    speed,
+                    pitch
+                );
+
+                // Cache the audio URL
+                this.chunkAudioCache.set(i, result.audioUrl);
+
+                // Rate limiting: wait 200ms between requests to avoid quota issues
+                if (i < chunks.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+            }
+
             this.currentChapterIndex = chapterIndex;
+            this.chapterChunks = chunks; // Store chapter chunks for offset calculation
 
-            console.log(`✅ Chapter audio generated: ${result.chunkTimings.length} chunks, ${result.duration.toFixed(1)}s`);
-            alert(`Chapter audio generated successfully! ${result.chunkTimings.length} chunks, ${result.duration.toFixed(1)}s`);
+            console.log(`✅ Generated audio for ${chunks.length} chunks`);
+            alert(`Chapter audio generated successfully! ${chunks.length} chunks ready.`);
 
-            // Re-enable button
             if (btn) {
                 btn.disabled = false;
-                btn.textContent = '✅';
+                btn.textContent = '✓';
                 btn.title = 'Chapter audio ready (click to regenerate)';
             }
         } catch (error) {
             console.error('Failed to generate chapter audio:', error);
             alert(`Failed to generate chapter audio: ${error.message}`);
 
-            // Re-enable button
-            const btn = document.getElementById('generate-chapter');
             if (btn) {
                 btn.disabled = false;
-                btn.textContent = '↓';
+                btn.textContent = 'Gen';
             }
+        } finally {
+            this.isGeneratingChapterAudio = false;
         }
     }
 

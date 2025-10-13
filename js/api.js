@@ -420,16 +420,17 @@ class TTSApiClient {
     }
 
     /**
-     * Generate chapter audio with timing marks
+     * Generate audio for a single chunk
      * @param {string} bookId - Backend book ID
      * @param {number} chapterIndex - Chapter number
-     * @param {Array} chunks - Array of {chunkId, text}
+     * @param {number} chunkId - Chunk ID
+     * @param {string} text - Text to synthesize
      * @param {string} voiceId - Voice ID
      * @param {number} speed - Speed
      * @param {number} pitch - Pitch
-     * @returns {Promise<{audioUrl, chunkTimings, duration}>}
+     * @returns {Promise<{audioUrl, chunkId}>}
      */
-    async generateChapterAudio(bookId, chapterIndex, chunks, voiceId, speed = 1.0, pitch = 0) {
+    async generateChunkAudio(bookId, chapterIndex, chunkId, text, voiceId, speed = 1.0, pitch = 0) {
         if (!this.isOnline) {
             throw new Error('No internet connection');
         }
@@ -439,13 +440,14 @@ class TTSApiClient {
         }
 
         try {
-            const response = await fetch(`${this.apiUrl}/api/chapters/generate-audio`, {
+            const response = await fetch(`${this.apiUrl}/api/chunks/generate-audio`, {
                 method: 'POST',
                 headers: this.getAuthHeaders(),
                 body: JSON.stringify({
                     bookId,
                     chapterIndex,
-                    chunks,
+                    chunkId,
+                    text,
                     voiceId,
                     speed,
                     pitch
@@ -458,23 +460,24 @@ class TTSApiClient {
                     throw new Error('Session expired. Please login again.');
                 }
                 const errorData = await response.json();
-                throw new Error(errorData.detail || 'Failed to generate chapter audio');
+                throw new Error(errorData.detail || 'Failed to generate chunk audio');
             }
 
             return await response.json();
         } catch (error) {
-            console.error('Failed to generate chapter audio:', error);
+            console.error('Failed to generate chunk audio:', error);
             throw error;
         }
     }
 
     /**
-     * Get existing chapter audio
+     * Get existing chunk audio
      * @param {string} bookId - Backend book ID
      * @param {number} chapterIndex - Chapter number
-     * @returns {Promise<{audioUrl, duration}>}
+     * @param {number} chunkId - Chunk ID
+     * @returns {Promise<{audioUrl, chunkId}>}
      */
-    async getChapterAudio(bookId, chapterIndex) {
+    async getChunkAudio(bookId, chapterIndex, chunkId) {
         if (!this.isOnline) {
             return null;
         }
@@ -484,7 +487,7 @@ class TTSApiClient {
         }
 
         try {
-            const response = await fetch(`${this.apiUrl}/api/chapters/${bookId}/${chapterIndex}/audio`, {
+            const response = await fetch(`${this.apiUrl}/api/chunks/${bookId}/${chapterIndex}/${chunkId}/audio`, {
                 method: 'GET',
                 headers: this.getAuthHeaders()
             });
@@ -495,7 +498,7 @@ class TTSApiClient {
 
             return await response.json();
         } catch (error) {
-            console.error('Failed to get chapter audio:', error);
+            console.error('Failed to get chunk audio:', error);
             return null;
         }
     }
