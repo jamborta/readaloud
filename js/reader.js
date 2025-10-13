@@ -307,52 +307,89 @@ class BookReader {
 
                 console.log(`✅ Got ${visibleText.length} characters from CFI range`);
 
-                // DEBUG: Show page boundaries
-                const allSentences = visibleText.match(/[^.!?]+[.!?]+/g) || [visibleText];
-                if (allSentences.length > 0) {
-                    console.log('🔍 DEBUG: First sentence on page:', allSentences[0].substring(0, 100) + '...');
-                    console.log('🔍 DEBUG: Last sentence on page:', allSentences[allSentences.length - 1].substring(0, 100) + '...');
+                // NEW APPROACH: Extract chunks directly from DOM text nodes
+                // This ensures chunks respect text node boundaries for easy highlighting
+                console.log('🔬 NEW CHUNKING: Walking DOM text nodes...');
+
+                const iframe = document.querySelector('#viewer iframe');
+                if (!iframe || !iframe.contentDocument) {
+                    console.error('❌ Cannot access iframe');
+                    this.currentParagraphs = [];
+                    return;
                 }
 
-                // Split into manageable chunks by sentences
-                // Target: 5-8 chunks per page, max 300 chars per chunk
+                const doc = iframe.contentDocument;
+                const walker = doc.createTreeWalker(
+                    doc.body,
+                    NodeFilter.SHOW_TEXT,
+                    null
+                );
+
                 const paragraphData = [];
-                const sentences = visibleText.split(/(?<=[.!?])\s+/);
-                let currentChunk = '';
                 const MAX_CHUNK_SIZE = 300;
                 const MIN_CHUNK_SIZE = 50;
 
-                console.log(`🔬 SENTENCE SPLIT DEBUG: Found ${sentences.length} sentences`);
+                let node;
+                let nodeIndex = 0;
+                while (node = walker.nextNode()) {
+                    const originalText = node.textContent;
+                    const nodeText = originalText.replace(/\s+/g, ' ').trim();
 
-                sentences.forEach((sentence, idx) => {
-                    const trimmed = sentence.trim();
-                    if (!trimmed) return;
+                    // Skip empty text nodes
+                    if (nodeText.length < MIN_CHUNK_SIZE) continue;
 
-                    console.log(`  Sentence ${idx}: "${trimmed.substring(0, 40)}..." (${trimmed.length} chars)`);
+                    nodeIndex++;
+                    console.log(`  Text node ${nodeIndex}: "${nodeText.substring(0, 60)}..." (${nodeText.length} chars)`);
 
-                    // If adding this sentence would exceed max size, save current chunk and start new one
-                    if (currentChunk.length > 0 && (currentChunk.length + trimmed.length + 1) > MAX_CHUNK_SIZE) {
-                        console.log(`    → Would exceed limit (${currentChunk.length} + ${trimmed.length} + 1 = ${currentChunk.length + trimmed.length + 1} > 300)`);
-                        if (currentChunk.length >= MIN_CHUNK_SIZE) {
-                            console.log(`    → Saving chunk: "${currentChunk.substring(0, 40)}..." (${currentChunk.length} chars)`);
-                            paragraphData.push({ textContent: currentChunk });
-                        } else {
-                            console.log(`    → DROPPED chunk (too small: ${currentChunk.length} < 50)`);
-                        }
-                        currentChunk = trimmed;
+                    // If text node is small enough, make it one chunk
+                    if (nodeText.length <= MAX_CHUNK_SIZE) {
+                        paragraphData.push({
+                            textContent: nodeText,
+                            sourceNode: node,
+                            startPos: 0,
+                            endPos: originalText.length
+                        });
+                        console.log(`    → Single chunk (0-${originalText.length})`);
                     } else {
-                        console.log(`    → Adding to current chunk (now ${currentChunk.length + trimmed.length + 1} chars)`);
-                        // Add sentence to current chunk
-                        currentChunk += (currentChunk ? ' ' : '') + trimmed;
-                    }
-                });
+                        // Split large text node into sentence-based chunks
+                        // Keep track of position in ORIGINAL text
+                        const sentences = nodeText.split(/(?<=[.!?])\s+/);
+                        let currentChunk = '';
+                        let chunkStartPos = 0;
+                        let currentPos = 0;
 
-                // Don't forget the last chunk
-                if (currentChunk.length >= MIN_CHUNK_SIZE) {
-                    console.log(`  → Saving final chunk: "${currentChunk.substring(0, 40)}..." (${currentChunk.length} chars)`);
-                    paragraphData.push({ textContent: currentChunk });
-                } else {
-                    console.log(`  → DROPPED final chunk (too small: ${currentChunk.length} < 50)`);
+                        sentences.forEach((sentence) => {
+                            const trimmed = sentence.trim();
+                            if (!trimmed) return;
+
+                            if (currentChunk.length > 0 && (currentChunk.length + trimmed.length + 1) > MAX_CHUNK_SIZE) {
+                                if (currentChunk.length >= MIN_CHUNK_SIZE) {
+                                    paragraphData.push({
+                                        textContent: currentChunk,
+                                        sourceNode: node,
+                                        startPos: chunkStartPos,
+                                        endPos: currentPos
+                                    });
+                                }
+                                currentChunk = trimmed;
+                                chunkStartPos = currentPos;
+                            } else {
+                                currentChunk += (currentChunk ? ' ' : '') + trimmed;
+                            }
+                            currentPos += trimmed.length + 1; // +1 for space
+                        });
+
+                        // Save last chunk from this node
+                        if (currentChunk.length >= MIN_CHUNK_SIZE) {
+                            paragraphData.push({
+                                textContent: currentChunk,
+                                sourceNode: node,
+                                startPos: chunkStartPos,
+                                endPos: Math.min(currentPos, originalText.length)
+                            });
+                        }
+                        console.log(`    → Split into ${paragraphData.filter(p => p.sourceNode === node).length} chunks`);
+                    }
                 }
 
                 this.currentParagraphs = paragraphData;
@@ -908,91 +945,25 @@ class BookReader {
         const paragraph = this.currentParagraphs[index];
         const textToFind = paragraph.textContent.trim();
 
-        // For EPUB mode - access iframe and highlight
-        if (this.book.fileType === 'epub' && this.rendition) {
-            const iframe = document.querySelector('#viewer iframe');
-            if (!iframe || !iframe.contentDocument) return;
+        console.log(`🔍 HIGHLIGHT [Chunk ${index}/${this.currentParagraphs.length - 1}]: "${textToFind.substring(0, 50)}..."`);
 
-            const doc = iframe.contentDocument;
-            const allElements = doc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, div, span, section, article');
+        // For EPUB mode - use stored text node reference for direct highlighting
+        if (this.book.fileType === 'epub' && this.rendition && paragraph.sourceNode) {
+            console.log('  ✅ Has sourceNode, highlighting parent element');
 
-            const searchText = textToFind.replace(/\s+/g, ' ');
+            const node = paragraph.sourceNode;
+            const parentEl = node.parentElement;
 
-            // DEBUG: Show what we're searching for
-            console.log(`🔍 HIGHLIGHT DEBUG [Chunk ${index}/${this.currentParagraphs.length - 1}]:`);
-            console.log(`  Full search text (${searchText.length} chars):`, searchText);
-            console.log('🔍 Total elements to check:', allElements.length);
-
-            // DIAGNOSTIC: Check if "WAY BACK" is in the search text
-            if (searchText.includes('WAY BACK')) {
-                console.log('✅ DIAGNOSTIC: Search text CONTAINS "WAY BACK"');
-            } else {
-                console.log('❌ DIAGNOSTIC: Search text does NOT contain "WAY BACK"');
-            }
-
-            // DIAGNOSTIC: Show all elements that contain "WAY BACK"
-            let elementsWithWayBack = 0;
-            for (const el of allElements) {
-                const elementText = el.textContent.trim().replace(/\s+/g, ' ');
-                if (elementText.includes('WAY BACK')) {
-                    elementsWithWayBack++;
-                    console.log(`  📍 Element ${elementsWithWayBack} contains "WAY BACK":`, elementText.substring(0, 80) + '...');
-                }
-            }
-            console.log(`  Total elements containing "WAY BACK": ${elementsWithWayBack}`);
-
-            // Two-pass matching: First look for elements that START with our text,
-            // then use Range API to find specific text within elements
-
-            // Pass 1: Look for elements that start with our search text
-            let elementIndex = 0;
-            for (const el of allElements) {
-                const elementText = el.textContent.trim().replace(/\s+/g, ' ');
-                if (elementText.length === 0) continue;
-
-                // Strategy 1: Exact match
-                if (elementText === searchText) {
-                    console.log(`✅ MATCHED Strategy 1 (exact) at element ${elementIndex}:`, elementText.substring(0, 50) + '...');
-                    this.applyHighlight(el);
-                    return;
-                }
-
-                // Strategy 2: Element starts with our search text (element might be longer)
-                if (elementText.startsWith(searchText)) {
-                    console.log(`✅ MATCHED Strategy 2 (element starts with search) at element ${elementIndex}:`, elementText.substring(0, 50) + '...');
-                    this.applyHighlight(el);
-                    return;
-                }
-
-                // Strategy 3: Search text starts with element (search might span multiple elements)
-                if (searchText.startsWith(elementText) && elementText.length > 20) {
-                    console.log(`✅ MATCHED Strategy 3 (search starts with element) at element ${elementIndex}:`, elementText.substring(0, 50) + '...');
-                    this.applyHighlight(el);
-                    return;
-                }
-
-                // Strategy 4: Element starts with first 50+ chars of search
-                if (searchText.length > 50) {
-                    const searchPrefix = searchText.substring(0, 50);
-                    if (elementText.startsWith(searchPrefix)) {
-                        console.log(`✅ MATCHED Strategy 4 (starts with 50 chars) at element ${elementIndex}:`, elementText.substring(0, 50) + '...');
-                        this.applyHighlight(el);
-                        return;
-                    }
-                }
-
-                elementIndex++;
-            }
-
-            // Pass 2: Use Range API to find specific text within elements
-            console.log('🔍 Pass 1 failed, trying Range API to find text...');
-            if (this.highlightTextWithRange(doc, searchText)) {
-                console.log('✅ Found and highlighted text using Range API');
+            if (parentEl) {
+                this.applyHighlight(parentEl);
+                console.log('  ✅ Successfully highlighted parent element:', parentEl.tagName);
                 return;
+            } else {
+                console.log('  ⚠️ No parent element found');
             }
-
-            console.log('❌ No matching element found');
         }
+
+        console.log('  ❌ Highlighting failed');
     }
 
     highlightTextWithRange(doc, searchText) {
