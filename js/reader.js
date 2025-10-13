@@ -219,8 +219,8 @@ class BookReader {
                 // Clear old highlight when page changes
                 this.removeHighlight();
 
-                // Extract text for TTS when page changes
-                await this.extractCurrentPageText();
+                // Extract text for TTS when page changes - pass location to avoid stale data
+                await this.extractCurrentPageText(location);
             });
 
             // Display the book
@@ -254,11 +254,8 @@ class BookReader {
                 console.error('Failed to load navigation:', error);
             });
 
-            // Extract initial page text after a short delay to ensure relocated event has fired
-            setTimeout(async () => {
-                await this.extractCurrentPageText();
-                console.log('Initial text extraction complete');
-            }, 500);
+            // Note: Initial text extraction happens via the 'relocated' event
+            // No need for setTimeout - the relocated event fires after display()
 
             console.log('EPUB rendered successfully');
 
@@ -268,14 +265,15 @@ class BookReader {
         }
     }
 
-    async extractCurrentPageText() {
+    async extractCurrentPageText(providedLocation = null) {
         try {
             if (!this.rendition || !this.epubBook) {
                 console.error('❌ Rendition or book not ready');
                 return;
             }
 
-            const location = this.rendition.currentLocation();
+            // Use provided location if available, otherwise query current location
+            const location = providedLocation || this.rendition.currentLocation();
             if (!location || !location.start || !location.end) {
                 console.error('❌ No location available');
                 return;
@@ -307,58 +305,50 @@ class BookReader {
 
                 console.log(`✅ Got ${visibleText.length} characters from CFI range`);
 
-                // NEW APPROACH: Extract chunks directly from DOM text nodes
-                // This ensures chunks respect text node boundaries for easy highlighting
-                console.log('🔬 NEW CHUNKING: Walking DOM text nodes...');
+                // Use range.cloneContents() to get ONLY visible page content
+                const fragment = range.cloneContents();
 
-                const iframe = document.querySelector('#viewer iframe');
-                if (!iframe || !iframe.contentDocument) {
-                    console.error('❌ Cannot access iframe');
-                    this.currentParagraphs = [];
-                    return;
+                // Helper function to recursively extract all text from the fragment
+                function getTextNodesFromFragment(node) {
+                    const textNodes = [];
+
+                    function walk(n) {
+                        if (n.nodeType === Node.TEXT_NODE) {
+                            const text = n.textContent.replace(/\s+/g, ' ').trim();
+                            if (text.length >= 5) { // MIN_CHUNK_SIZE
+                                textNodes.push(text);
+                            }
+                        } else if (n.nodeType === Node.ELEMENT_NODE || n.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+                            // Walk children for both elements and document fragments
+                            for (let child of n.childNodes) {
+                                walk(child);
+                            }
+                        }
+                    }
+
+                    walk(node);
+                    return textNodes;
                 }
 
-                const doc = iframe.contentDocument;
-                const walker = doc.createTreeWalker(
-                    doc.body,
-                    NodeFilter.SHOW_TEXT,
-                    null
-                );
+                const textNodes = getTextNodesFromFragment(fragment);
 
+                // Now chunk the text
                 const paragraphData = [];
                 const MAX_CHUNK_SIZE = 300;
                 const MIN_CHUNK_SIZE = 5;
 
-                let node;
-                let nodeIndex = 0;
-                while (node = walker.nextNode()) {
-                    const originalText = node.textContent;
-                    const nodeText = originalText.replace(/\s+/g, ' ').trim();
+                for (let i = 0; i < textNodes.length; i++) {
+                    const nodeText = textNodes[i];
 
-                    // Skip tiny text nodes (< 5 chars)
-                    if (nodeText.length < MIN_CHUNK_SIZE) continue;
-
-                    nodeIndex++;
-                    console.log(`  Text node ${nodeIndex}: "${nodeText.substring(0, 60)}..." (${nodeText.length} chars)`);
-
-                    // If text node is small enough, make it one chunk
+                    // If text is small enough, make it one chunk
                     if (nodeText.length <= MAX_CHUNK_SIZE) {
-                        const chunkId = paragraphData.length;
                         paragraphData.push({
-                            textContent: nodeText,
-                            sourceNode: node,
-                            startPos: 0,
-                            endPos: originalText.length
+                            textContent: nodeText
                         });
-                        console.log(`    → Chunk ${chunkId}: Single chunk (0-${originalText.length})`);
                     } else {
-                        console.log(`    → Node too large, splitting into sentence chunks...`);
-                        // Split large text node into sentence-based chunks
-                        // Keep track of position in ORIGINAL text
+                        // Split large text into sentence-based chunks
                         const sentences = nodeText.split(/(?<=[.!?])\s+/);
                         let currentChunk = '';
-                        let chunkStartPos = 0;
-                        let currentPos = 0;
 
                         sentences.forEach((sentence) => {
                             const trimmed = sentence.trim();
@@ -366,33 +356,21 @@ class BookReader {
 
                             if (currentChunk.length > 0 && (currentChunk.length + trimmed.length + 1) > MAX_CHUNK_SIZE) {
                                 if (currentChunk.length >= MIN_CHUNK_SIZE) {
-                                    const chunkId = paragraphData.length;
                                     paragraphData.push({
-                                        textContent: currentChunk,
-                                        sourceNode: node,
-                                        startPos: chunkStartPos,
-                                        endPos: currentPos
+                                        textContent: currentChunk
                                     });
-                                    console.log(`    → Chunk ${chunkId}: "${currentChunk.substring(0, 40)}..." (${currentChunk.length} chars)`);
                                 }
                                 currentChunk = trimmed;
-                                chunkStartPos = currentPos;
                             } else {
                                 currentChunk += (currentChunk ? ' ' : '') + trimmed;
                             }
-                            currentPos += trimmed.length + 1; // +1 for space
                         });
 
-                        // Save last chunk from this node
+                        // Save last chunk
                         if (currentChunk.length >= MIN_CHUNK_SIZE) {
-                            const chunkId = paragraphData.length;
                             paragraphData.push({
-                                textContent: currentChunk,
-                                sourceNode: node,
-                                startPos: chunkStartPos,
-                                endPos: Math.min(currentPos, originalText.length)
+                                textContent: currentChunk
                             });
-                            console.log(`    → Chunk ${chunkId}: "${currentChunk.substring(0, 40)}..." (${currentChunk.length} chars)`);
                         }
                     }
                 }
@@ -405,13 +383,7 @@ class BookReader {
                 this.lastExtractedText = firstParagraphText;
                 this.lastSectionIndex = location.start.index;
 
-                console.log(`✅ Extracted ${this.currentParagraphs.length} paragraphs`);
-
-                // DEBUG: Show all chunks
-                console.log('📝 CHUNKS DEBUG:');
-                paragraphData.forEach((chunk, idx) => {
-                    console.log(`  Chunk ${idx}: "${chunk.textContent.substring(0, 60)}..." (${chunk.textContent.length} chars)`);
-                });
+                console.log(`✅ Extracted ${this.currentParagraphs.length} paragraphs from current page`);
 
             } catch (error) {
                 console.error('❌ CFI extraction failed:', error);

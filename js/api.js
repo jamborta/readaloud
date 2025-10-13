@@ -403,6 +403,7 @@ class TTSApiClient {
         }
 
         try {
+            console.log('Sending position to backend:', position);
             const response = await fetch(`${this.apiUrl}/api/positions`, {
                 method: 'POST',
                 headers: this.getAuthHeaders(),
@@ -410,7 +411,8 @@ class TTSApiClient {
             });
 
             if (!response.ok) {
-                console.error('Failed to save position');
+                const errorText = await response.text();
+                console.error('Failed to save position:', response.status, errorText);
             }
         } catch (error) {
             console.error('Failed to save position:', error);

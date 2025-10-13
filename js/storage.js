@@ -253,11 +253,21 @@ class StorageManager {
             try {
                 const book = await this.getBook(bookId);
                 if (book && book.backendId) {
-                    await ttsApi.savePosition({
+                    // Build position data based on type
+                    const positionData = {
                         bookId: book.backendId,  // Use backend ID for sync
-                        paragraphIndex: position.paragraphIndex,
-                        totalParagraphs: position.totalParagraphs
-                    });
+                        type: position.type
+                    };
+
+                    // Add type-specific fields
+                    if (position.type === 'epub' && position.cfi) {
+                        positionData.cfi = position.cfi;
+                    } else if (position.type === 'pdf') {
+                        positionData.paragraphIndex = position.paragraphIndex;
+                        positionData.totalParagraphs = position.totalParagraphs;
+                    }
+
+                    await ttsApi.savePosition(positionData);
                 }
             } catch (error) {
                 console.error('Failed to sync position to backend:', error);
