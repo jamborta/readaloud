@@ -307,40 +307,40 @@ class BookReader {
 
                 console.log(`✅ Got ${visibleText.length} characters from CFI range`);
 
-                // Split into paragraphs by sentence groups
-                const paragraphs = visibleText.split(/\n\n+/);
-                const paragraphData = [];
+                // DEBUG: Show page boundaries
+                const allSentences = visibleText.match(/[^.!?]+[.!?]+/g) || [visibleText];
+                if (allSentences.length > 0) {
+                    console.log('🔍 DEBUG: First sentence on page:', allSentences[0].substring(0, 100) + '...');
+                    console.log('🔍 DEBUG: Last sentence on page:', allSentences[allSentences.length - 1].substring(0, 100) + '...');
+                }
 
-                paragraphs.forEach(para => {
-                    const trimmed = para.trim().replace(/\s+/g, ' ');
-                    if (trimmed.length >= 30) {
-                        paragraphData.push({ textContent: trimmed });
+                // Split into manageable chunks by sentences
+                // Target: 5-8 chunks per page, max 300 chars per chunk
+                const paragraphData = [];
+                const sentences = visibleText.split(/(?<=[.!?])\s+/);
+                let currentChunk = '';
+                const MAX_CHUNK_SIZE = 300;
+                const MIN_CHUNK_SIZE = 50;
+
+                sentences.forEach(sentence => {
+                    const trimmed = sentence.trim();
+                    if (!trimmed) return;
+
+                    // If adding this sentence would exceed max size, save current chunk and start new one
+                    if (currentChunk.length > 0 && (currentChunk.length + trimmed.length + 1) > MAX_CHUNK_SIZE) {
+                        if (currentChunk.length >= MIN_CHUNK_SIZE) {
+                            paragraphData.push({ textContent: currentChunk });
+                        }
+                        currentChunk = trimmed;
+                    } else {
+                        // Add sentence to current chunk
+                        currentChunk += (currentChunk ? ' ' : '') + trimmed;
                     }
                 });
 
-                // If we got very few paragraphs, split by sentences instead
-                if (paragraphData.length < 2) {
-                    paragraphData.length = 0;
-                    const sentences = visibleText.split(/(?<=[.!?])\s+/);
-                    let currentPara = '';
-
-                    sentences.forEach(sentence => {
-                        const trimmed = sentence.trim();
-                        if (!trimmed) return;
-
-                        if (currentPara.length + trimmed.length < 500) {
-                            currentPara += (currentPara ? ' ' : '') + trimmed;
-                        } else {
-                            if (currentPara.length >= 30) {
-                                paragraphData.push({ textContent: currentPara });
-                            }
-                            currentPara = trimmed;
-                        }
-                    });
-
-                    if (currentPara.length >= 30) {
-                        paragraphData.push({ textContent: currentPara });
-                    }
+                // Don't forget the last chunk
+                if (currentChunk.length >= MIN_CHUNK_SIZE) {
+                    paragraphData.push({ textContent: currentChunk });
                 }
 
                 this.currentParagraphs = paragraphData;
@@ -352,10 +352,6 @@ class BookReader {
                 this.lastSectionIndex = location.start.index;
 
                 console.log(`✅ Extracted ${this.currentParagraphs.length} paragraphs`);
-
-                if (this.currentParagraphs.length > 0) {
-                    console.log('📖 First:', this.currentParagraphs[0].textContent.substring(0, 80) + '...');
-                }
 
             } catch (error) {
                 console.error('❌ CFI extraction failed:', error);
@@ -884,140 +880,12 @@ class BookReader {
     }
 
     highlightParagraph(index) {
-        if (this.currentParagraphs.length === 0) return;
-
-        // Remove previous highlight
-        this.removeHighlight();
-
-        if (this.currentParagraphs[index]) {
-            const paragraph = this.currentParagraphs[index];
-
-            // For EPUB mode - directly access iframe and highlight text
-            if (this.book.fileType === 'epub' && this.rendition) {
-                try {
-                    console.log('Highlighting paragraph:', paragraph.textContent.substring(0, 50) + '...');
-
-                    // Get the rendered iframe
-                    const iframe = document.querySelector('#viewer iframe');
-                    if (!iframe || !iframe.contentDocument) {
-                        console.warn('Could not access iframe');
-                        return;
-                    }
-
-                    const doc = iframe.contentDocument;
-                    const textToFind = paragraph.textContent.trim();
-
-                    // Find the text in the document using a text walker
-                    this.highlightTextInIframe(doc, textToFind);
-
-                } catch (e) {
-                    console.error('Could not highlight paragraph:', e);
-                }
-            }
-
-            // For PDF mode - use classList
-            if (paragraph.classList) {
-                this.currentParagraphs.forEach(p => {
-                    if (p.classList) {
-                        p.classList.remove('active-paragraph');
-                    }
-                });
-                paragraph.classList.add('active-paragraph');
-                paragraph.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-        }
-    }
-
-    highlightTextInIframe(doc, searchText) {
-        if (!doc || !doc.body) {
-            console.warn('❌ No doc or body for highlighting');
-            return;
-        }
-
-        console.log('🔍 Searching for text to highlight:', searchText.substring(0, 100));
-
-        // Normalize search text for comparison
-        const normalizeText = (text) => text.trim().replace(/\s+/g, ' ').toLowerCase();
-        const normalizedSearch = normalizeText(searchText);
-
-        // Try to find matching element - be more flexible with matching
-        const allElements = doc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, div, span, section, article');
-
-        console.log('🔍 Checking', allElements.length, 'elements');
-
-        for (const el of allElements) {
-            const elementText = el.textContent.trim();
-            const normalizedElement = normalizeText(elementText);
-
-            // Strategy 1: Exact match (case-insensitive, whitespace normalized)
-            if (normalizedSearch === normalizedElement) {
-                console.log('✅ Found exact match!');
-                this.applyHighlight(el);
-                return;
-            }
-
-            // Strategy 2: Match first 50 chars
-            const compareLength = Math.min(50, normalizedSearch.length, normalizedElement.length);
-            if (compareLength > 20 && normalizedSearch.substring(0, compareLength) === normalizedElement.substring(0, compareLength)) {
-                console.log('✅ Found match by first 50 chars!');
-                this.applyHighlight(el);
-                return;
-            }
-
-            // Strategy 3: Element contains the search text
-            if (normalizedElement.includes(normalizedSearch) && normalizedSearch.length > 20) {
-                console.log('✅ Found match - element contains search text!');
-                this.applyHighlight(el);
-                return;
-            }
-
-            // Strategy 4: Search text contains the element (for short elements)
-            if (normalizedSearch.includes(normalizedElement) && normalizedElement.length > 20) {
-                console.log('✅ Found match - search contains element text!');
-                this.applyHighlight(el);
-                return;
-            }
-        }
-
-        console.warn('❌ Could not find matching element to highlight for:', searchText.substring(0, 50));
-    }
-
-    applyHighlight(el) {
-        el.style.backgroundColor = 'rgba(255, 255, 0, 0.4)';
-        el.style.transition = 'background-color 0.3s ease';
-        el.setAttribute('data-tts-highlight', 'true');
-
-        // Store reference for removal
-        this.currentHighlightElement = el;
-
-        // Scroll into view
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-        console.log('✅ Highlighted element:', el.tagName, 'Text:', el.textContent.substring(0, 100));
+        // TODO: Implement highlighting
+        console.log('TODO: Highlight paragraph', index);
     }
 
     removeHighlight() {
-        try {
-            // Remove direct element highlighting
-            if (this.currentHighlightElement) {
-                this.currentHighlightElement.style.backgroundColor = '';
-                this.currentHighlightElement.removeAttribute('data-tts-highlight');
-                this.currentHighlightElement = null;
-            }
-
-            // Also clean up any leftover highlights in iframe
-            const iframe = document.querySelector('#viewer iframe');
-            if (iframe && iframe.contentDocument) {
-                const doc = iframe.contentDocument;
-                const highlighted = doc.querySelectorAll('[data-tts-highlight]');
-                highlighted.forEach(el => {
-                    el.style.backgroundColor = '';
-                    el.removeAttribute('data-tts-highlight');
-                });
-            }
-        } catch (e) {
-            console.warn('Could not remove highlight:', e);
-        }
+        // TODO: Implement highlight removal
     }
 
     async saveReadingPosition() {
