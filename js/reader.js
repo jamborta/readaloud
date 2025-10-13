@@ -343,14 +343,16 @@ class BookReader {
 
                     // If text node is small enough, make it one chunk
                     if (nodeText.length <= MAX_CHUNK_SIZE) {
+                        const chunkId = paragraphData.length;
                         paragraphData.push({
                             textContent: nodeText,
                             sourceNode: node,
                             startPos: 0,
                             endPos: originalText.length
                         });
-                        console.log(`    → Single chunk (0-${originalText.length})`);
+                        console.log(`    → Chunk ${chunkId}: Single chunk (0-${originalText.length})`);
                     } else {
+                        console.log(`    → Node too large, splitting into sentence chunks...`);
                         // Split large text node into sentence-based chunks
                         // Keep track of position in ORIGINAL text
                         const sentences = nodeText.split(/(?<=[.!?])\s+/);
@@ -364,12 +366,14 @@ class BookReader {
 
                             if (currentChunk.length > 0 && (currentChunk.length + trimmed.length + 1) > MAX_CHUNK_SIZE) {
                                 if (currentChunk.length >= MIN_CHUNK_SIZE) {
+                                    const chunkId = paragraphData.length;
                                     paragraphData.push({
                                         textContent: currentChunk,
                                         sourceNode: node,
                                         startPos: chunkStartPos,
                                         endPos: currentPos
                                     });
+                                    console.log(`    → Chunk ${chunkId}: "${currentChunk.substring(0, 40)}..." (${currentChunk.length} chars)`);
                                 }
                                 currentChunk = trimmed;
                                 chunkStartPos = currentPos;
@@ -381,14 +385,15 @@ class BookReader {
 
                         // Save last chunk from this node
                         if (currentChunk.length >= MIN_CHUNK_SIZE) {
+                            const chunkId = paragraphData.length;
                             paragraphData.push({
                                 textContent: currentChunk,
                                 sourceNode: node,
                                 startPos: chunkStartPos,
                                 endPos: Math.min(currentPos, originalText.length)
                             });
+                            console.log(`    → Chunk ${chunkId}: "${currentChunk.substring(0, 40)}..." (${currentChunk.length} chars)`);
                         }
-                        console.log(`    → Split into ${paragraphData.filter(p => p.sourceNode === node).length} chunks`);
                     }
                 }
 
@@ -947,20 +952,106 @@ class BookReader {
 
         console.log(`🔍 HIGHLIGHT [Chunk ${index}/${this.currentParagraphs.length - 1}]: "${textToFind.substring(0, 50)}..."`);
 
-        // For EPUB mode - use stored text node reference for direct highlighting
-        if (this.book.fileType === 'epub' && this.rendition && paragraph.sourceNode) {
-            console.log('  ✅ Has sourceNode, highlighting parent element');
+        // For EPUB mode - find the text node fresh each time (stored reference may be stale)
+        if (this.book.fileType === 'epub' && this.rendition) {
+            console.log('  📍 Searching for chunk in current DOM...');
 
-            const node = paragraph.sourceNode;
-            const parentEl = node.parentElement;
-
-            if (parentEl) {
-                this.applyHighlight(parentEl);
-                console.log('  ✅ Successfully highlighted parent element:', parentEl.tagName);
+            const iframe = document.querySelector('#viewer iframe');
+            if (!iframe || !iframe.contentDocument) {
+                console.log('  ❌ Cannot access iframe');
                 return;
-            } else {
-                console.log('  ⚠️ No parent element found');
             }
+
+            const doc = iframe.contentDocument;
+            const normalizedChunk = textToFind.replace(/\s+/g, ' ');
+
+            // Walk DOM to find the text node that contains our chunk
+            const walker = doc.createTreeWalker(
+                doc.body,
+                NodeFilter.SHOW_TEXT,
+                null
+            );
+
+            let node;
+            while (node = walker.nextNode()) {
+                const originalText = node.textContent;
+                const normalizedOriginal = originalText.replace(/\s+/g, ' ').trim();
+
+                // Check if this node contains our chunk
+                const normalizedIndex = normalizedOriginal.indexOf(normalizedChunk);
+
+                if (normalizedIndex !== -1) {
+                    console.log(`  ✅ Found chunk in text node!`);
+                    console.log(`    Node: "${normalizedOriginal.substring(0, 60)}..."`);
+                    console.log(`    Chunk position: ${normalizedIndex}`);
+
+                    // Map normalized index to original text index
+                    let originalIndex = 0;
+                    let normalizedPos = 0;
+
+                    for (let i = 0; i < originalText.length; i++) {
+                        if (normalizedPos === normalizedIndex) {
+                            originalIndex = i;
+                            break;
+                        }
+
+                        const char = originalText[i];
+                        if (/\s/.test(char)) {
+                            if (i === 0 || !/\s/.test(originalText[i - 1])) {
+                                normalizedPos++;
+                            }
+                        } else {
+                            normalizedPos++;
+                        }
+                    }
+
+                    // Calculate end index
+                    let originalEndIndex = originalIndex;
+                    let charsMatched = 0;
+
+                    for (let i = originalIndex; i < originalText.length && charsMatched < normalizedChunk.length; i++) {
+                        const char = originalText[i];
+                        if (/\s/.test(char)) {
+                            if (i === originalIndex || !/\s/.test(originalText[i - 1])) {
+                                charsMatched++;
+                            }
+                        } else {
+                            charsMatched++;
+                        }
+                        originalEndIndex = i + 1;
+                    }
+
+                    console.log(`    Original range: ${originalIndex}-${originalEndIndex}`);
+
+                    try {
+                        const range = doc.createRange();
+                        range.setStart(node, originalIndex);
+                        range.setEnd(node, originalEndIndex);
+
+                        const highlightSpan = doc.createElement('span');
+                        highlightSpan.style.backgroundColor = 'rgba(255, 255, 0, 0.3)';
+                        highlightSpan.style.transition = 'background-color 0.2s ease';
+                        highlightSpan.setAttribute('data-tts-highlight', 'true');
+
+                        range.surroundContents(highlightSpan);
+                        this.currentHighlightElement = highlightSpan;
+                        highlightSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                        console.log('  ✅ Precise highlighting successful');
+                        return;
+                    } catch (e) {
+                        console.log('  ⚠️ Range wrapping failed:', e.message);
+                        // Try parent element highlight as fallback
+                        const parentEl = node.parentElement;
+                        if (parentEl) {
+                            this.applyHighlight(parentEl);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            console.log('  ⚠️ Chunk not found in any text node');
         }
 
         console.log('  ❌ Highlighting failed');
