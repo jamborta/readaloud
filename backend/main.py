@@ -22,7 +22,7 @@ import base64
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this")
 INVITATION_CODE = os.getenv("INVITATION_CODE", "")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 525600 * 10  # 10 years (effectively never expires)
 
 # Initialize Firebase Admin
 try:
