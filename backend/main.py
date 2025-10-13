@@ -17,6 +17,7 @@ from google.cloud import texttospeech, storage
 import firebase_admin
 from firebase_admin import credentials, firestore
 import base64
+from tts_provider import get_tts_provider
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this")
@@ -123,6 +124,37 @@ class ReadingPosition(BaseModel):
     paragraphIndex: Optional[int] = None  # For PDF positions
     totalParagraphs: Optional[int] = None  # For PDF positions
     lastRead: Optional[str] = None
+
+
+class TextChunk(BaseModel):
+    """Frontend chunk - small, aligned to text nodes for highlighting"""
+    chunkId: int
+    text: str
+
+
+class ChunkTiming(BaseModel):
+    """Timing information for a chunk within the audio"""
+    chunkId: int
+    startTime: float  # seconds from start of audio
+
+
+class ChapterAudioRequest(BaseModel):
+    bookId: str
+    chapterIndex: int
+    chunks: list[TextChunk]  # Frontend's pre-chunked text
+    voiceId: str = "en-US-Neural2-A"
+    speed: float = 1.0
+    pitch: float = 0
+
+
+class ChapterAudioResponse(BaseModel):
+    bookId: str
+    chapterIndex: int
+    audioUrl: str  # Single audio file with all chunks
+    chunkTimings: list[ChunkTiming]  # Timing for each chunk
+    duration: float  # Total audio duration
+    provider: str  # TTS provider used
+    generatedAt: str
 
 
 # Helper functions
@@ -542,6 +574,147 @@ async def save_position(position: ReadingPosition, username: str = Depends(verif
     position_ref.set(position_data)
 
     return position_data
+
+
+# Chapter audio generation endpoints
+@app.post("/api/chapters/generate-audio", response_model=ChapterAudioResponse)
+async def generate_chapter_audio(request: ChapterAudioRequest, username: str = Depends(verify_token)):
+    """
+    Generate audio for an entire chapter with timing marks for each chunk
+    """
+    if not db or not bucket:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database or storage not available",
+        )
+
+    try:
+        # Get TTS provider
+        provider = get_tts_provider()
+
+        # Convert chunks to format expected by provider
+        chunk_list = [{"chunkId": c.chunkId, "text": c.text} for c in request.chunks]
+
+        # Generate audio with timing marks
+        result = provider.synthesize_with_marks(
+            chunks=chunk_list,
+            voice_id=request.voiceId,
+            speed=request.speed,
+            pitch=request.pitch
+        )
+
+        # Store audio in Cloud Storage
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        audio_path = f"users/{username}/audio/{request.bookId}/chapter_{request.chapterIndex}_{timestamp}.mp3"
+
+        blob = bucket.blob(audio_path)
+        blob.upload_from_string(result.audio_bytes, content_type="audio/mpeg")
+
+        # Generate signed URL (valid for 7 days)
+        audio_url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(days=7),
+            method="GET"
+        )
+
+        # Store metadata in Firestore
+        audio_ref = db.collection('users').document(username).collection('chapter_audio').document(
+            f"{request.bookId}_chapter_{request.chapterIndex}"
+        )
+
+        audio_metadata = {
+            "bookId": request.bookId,
+            "chapterIndex": request.chapterIndex,
+            "storagePath": audio_path,
+            "chunkCount": len(request.chunks),
+            "duration": result.duration,
+            "provider": result.provider,
+            "voiceId": request.voiceId,
+            "speed": request.speed,
+            "pitch": request.pitch,
+            "generatedAt": datetime.now().isoformat()
+        }
+        audio_ref.set(audio_metadata)
+
+        # Track usage
+        total_chars = sum(len(c.text) for c in request.chunks)
+        user_ref = db.collection('users').document(username)
+        user_ref.update({
+            "total_characters_used": firestore.Increment(total_chars)
+        })
+
+        print(f"✅ Generated chapter audio: {audio_path} ({len(request.chunks)} chunks, {result.duration:.1f}s)")
+
+        # Return response with timing information
+        return ChapterAudioResponse(
+            bookId=request.bookId,
+            chapterIndex=request.chapterIndex,
+            audioUrl=audio_url,
+            chunkTimings=[
+                ChunkTiming(chunkId=t.chunk_id, startTime=t.start_time)
+                for t in result.chunk_timings
+            ],
+            duration=result.duration,
+            provider=result.provider,
+            generatedAt=audio_metadata["generatedAt"]
+        )
+
+    except Exception as e:
+        print(f"❌ Failed to generate chapter audio: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate chapter audio: {str(e)}",
+        )
+
+
+@app.get("/api/chapters/{book_id}/{chapter_index}/audio")
+async def get_chapter_audio(book_id: str, chapter_index: int, username: str = Depends(verify_token)):
+    """
+    Get existing chapter audio if available
+    """
+    if not db or not bucket:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database or storage not available",
+        )
+
+    # Check if audio exists
+    audio_ref = db.collection('users').document(username).collection('chapter_audio').document(
+        f"{book_id}_chapter_{chapter_index}"
+    )
+    audio_doc = audio_ref.get()
+
+    if not audio_doc.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chapter audio not found. Generate it first.",
+        )
+
+    audio_data = audio_doc.to_dict()
+
+    # Generate fresh signed URL
+    blob = bucket.blob(audio_data['storagePath'])
+
+    if not blob.exists():
+        # Audio was deleted from storage
+        audio_ref.delete()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Audio file not found in storage",
+        )
+
+    audio_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(days=7),
+        method="GET"
+    )
+
+    return {
+        "audioUrl": audio_url,
+        "chapterIndex": audio_data['chapterIndex'],
+        "duration": audio_data['duration'],
+        "generatedAt": audio_data['generatedAt']
+    }
 
 
 if __name__ == "__main__":

@@ -420,6 +420,87 @@ class TTSApiClient {
     }
 
     /**
+     * Generate chapter audio with timing marks
+     * @param {string} bookId - Backend book ID
+     * @param {number} chapterIndex - Chapter number
+     * @param {Array} chunks - Array of {chunkId, text}
+     * @param {string} voiceId - Voice ID
+     * @param {number} speed - Speed
+     * @param {number} pitch - Pitch
+     * @returns {Promise<{audioUrl, chunkTimings, duration}>}
+     */
+    async generateChapterAudio(bookId, chapterIndex, chunks, voiceId, speed = 1.0, pitch = 0) {
+        if (!this.isOnline) {
+            throw new Error('No internet connection');
+        }
+
+        if (!this.isAuthenticated()) {
+            throw new Error('Please login to generate audio');
+        }
+
+        try {
+            const response = await fetch(`${this.apiUrl}/api/chapters/generate-audio`, {
+                method: 'POST',
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify({
+                    bookId,
+                    chapterIndex,
+                    chunks,
+                    voiceId,
+                    speed,
+                    pitch
+                })
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    this.logout();
+                    throw new Error('Session expired. Please login again.');
+                }
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to generate chapter audio');
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Failed to generate chapter audio:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get existing chapter audio
+     * @param {string} bookId - Backend book ID
+     * @param {number} chapterIndex - Chapter number
+     * @returns {Promise<{audioUrl, duration}>}
+     */
+    async getChapterAudio(bookId, chapterIndex) {
+        if (!this.isOnline) {
+            return null;
+        }
+
+        if (!this.isAuthenticated()) {
+            return null;
+        }
+
+        try {
+            const response = await fetch(`${this.apiUrl}/api/chapters/${bookId}/${chapterIndex}/audio`, {
+                method: 'GET',
+                headers: this.getAuthHeaders()
+            });
+
+            if (!response.ok) {
+                return null; // Audio not found
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Failed to get chapter audio:', error);
+            return null;
+        }
+    }
+
+    /**
      * Check if API URL is configured
      */
     isConfigured() {

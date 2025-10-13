@@ -20,6 +20,8 @@ class BookReader {
         this.pageAdvanceFailures = 0;
         this.lastExtractedText = null;
         this.lastSectionIndex = null;
+        this.chapterAudio = null; // {audioUrl, chunkTimings: [{chunkId, startTime}], duration}
+        this.currentChapterIndex = null;
     }
 
     async init() {
@@ -116,6 +118,10 @@ class BookReader {
 
             document.getElementById('next-paragraph').addEventListener('click', () => {
                 this.nextParagraph();
+            });
+
+            document.getElementById('generate-chapter').addEventListener('click', () => {
+                this.generateCurrentChapterAudio();
             });
         }
 
@@ -282,6 +288,21 @@ class BookReader {
             console.log('📍 Extracting text from current page...');
 
             try {
+                // Check if we moved to a different chapter - clear chapter audio if so
+                const newChapterIndex = location.start.index;
+                if (this.currentChapterIndex !== null && this.currentChapterIndex !== newChapterIndex) {
+                    console.log(`Moved from chapter ${this.currentChapterIndex} to ${newChapterIndex}, clearing chapter audio`);
+                    this.chapterAudio = null;
+                    this.currentChapterIndex = null;
+
+                    // Reset button icon
+                    const btn = document.getElementById('generate-chapter');
+                    if (btn) {
+                        btn.textContent = 'Gen';
+                        btn.title = 'Generate chapter audio';
+                    }
+                }
+
                 const startCfi = location.start.cfi;
                 const endCfi = location.end.cfi;
 
@@ -384,6 +405,9 @@ class BookReader {
                 this.lastSectionIndex = location.start.index;
 
                 console.log(`✅ Extracted ${this.currentParagraphs.length} paragraphs from current page`);
+
+                // Check if chapter audio exists for this chapter
+                await this.checkForExistingChapterAudio(newChapterIndex);
 
             } catch (error) {
                 console.error('❌ CFI extraction failed:', error);
@@ -684,59 +708,85 @@ class BookReader {
             this.isLoadingAudio = true;
             this.highlightParagraph(this.currentParagraphIndex);
 
-            if (isNewParagraph) {
-                this.currentChunks = this.splitTextIntoChunks(text);
-                this.currentChunkIndex = 0;
-            }
+            // Check if we have chapter audio available
+            const location = this.rendition ? this.rendition.currentLocation() : null;
+            const currentChapterIndex = location && location.start ? location.start.index : null;
+            const hasChapterAudio = this.chapterAudio &&
+                                   this.currentChapterIndex === currentChapterIndex &&
+                                   this.chapterAudio.audioUrl;
 
-            const chunk = this.currentChunks[this.currentChunkIndex];
-            const settings = storage.getSettings();
-            const voiceId = settings.voiceId || 'en-US-Standard-A';
-            const speed = settings.speed || 1.0;
-            const pitch = settings.pitch || 0;
+            if (hasChapterAudio) {
+                // Use chapter audio with seeking
+                console.log(`Using chapter audio for chunk ${this.currentParagraphIndex}`);
 
-            const cacheKey = `${voiceId}-${speed}-${pitch}-${chunk.substring(0, 50)}`;
+                // Find timing for current chunk
+                const timing = this.chapterAudio.chunkTimings.find(
+                    t => t.chunkId === this.currentParagraphIndex
+                );
 
-            let audioContent;
-            if (this.audioCache.has(cacheKey)) {
-                audioContent = this.audioCache.get(cacheKey);
-            } else {
-                const result = await ttsApi.synthesize(chunk, voiceId, speed, pitch);
-                audioContent = result.audioContent;
-
-                this.trackUsage(result.characterCount);
-
-                if (this.audioCache.size > 20) {
-                    const firstKey = this.audioCache.keys().next().value;
-                    this.audioCache.delete(firstKey);
+                if (!timing) {
+                    console.warn(`No timing found for chunk ${this.currentParagraphIndex}, falling back to on-demand TTS`);
+                    return await this.speakWithOnDemandTTS(text, isNewParagraph);
                 }
-                this.audioCache.set(cacheKey, audioContent);
-            }
 
-            if (this.currentAudio) {
-                this.currentAudio.pause();
-            }
+                // Stop current audio if playing
+                if (this.currentAudio) {
+                    this.currentAudio.pause();
+                }
 
-            this.currentAudio = ttsApi.createAudioElement(audioContent);
+                // Load chapter audio if not already loaded or if different audio
+                if (!this.currentAudio || this.currentAudio.src !== this.chapterAudio.audioUrl) {
+                    console.log(`Loading chapter audio from ${this.chapterAudio.audioUrl}`);
+                    this.currentAudio = new Audio(this.chapterAudio.audioUrl);
 
-            this.currentAudio.onended = () => {
-                if (this.isPlaying) {
-                    if (this.currentChunkIndex < this.currentChunks.length - 1) {
-                        this.currentChunkIndex++;
-                        this.speak(text, false);
-                    } else {
+                    this.currentAudio.onerror = (error) => {
+                        console.error('Chapter audio playback error:', error);
+                        this.pause();
+                        alert('Error playing chapter audio. Try generating again.');
+                    };
+                }
+
+                // Seek to chunk start time
+                this.currentAudio.currentTime = timing.startTime;
+                console.log(`Seeking to ${timing.startTime.toFixed(2)}s for chunk ${this.currentParagraphIndex}`);
+
+                // Set up ended handler to move to next chunk
+                this.currentAudio.onended = () => {
+                    if (this.isPlaying) {
                         this.nextParagraph();
                     }
+                };
+
+                // For chapter audio, we need to manually stop at next chunk's start time
+                // Find next chunk timing
+                const nextTiming = this.chapterAudio.chunkTimings.find(
+                    t => t.chunkId === this.currentParagraphIndex + 1
+                );
+
+                if (nextTiming) {
+                    // Set up a timeout to stop at the next chunk
+                    const duration = nextTiming.startTime - timing.startTime;
+                    console.log(`Will play for ${duration.toFixed(2)}s until next chunk`);
+
+                    setTimeout(() => {
+                        if (this.currentAudio && this.isPlaying &&
+                            this.currentParagraphIndex === timing.chunkId) {
+                            // Stop and move to next paragraph
+                            this.currentAudio.pause();
+                            this.nextParagraph();
+                        }
+                    }, duration * 1000);
+                } else {
+                    // Last chunk - let it play to end
+                    console.log('Last chunk in chapter audio');
                 }
-            };
 
-            this.currentAudio.onerror = (error) => {
-                console.error('Audio playback error:', error);
-                this.pause();
-                alert('Error playing audio. Please try again.');
-            };
+                await this.currentAudio.play();
 
-            await this.currentAudio.play();
+            } else {
+                // Fall back to on-demand TTS
+                await this.speakWithOnDemandTTS(text, isNewParagraph);
+            }
 
         } catch (error) {
             console.error('Speech synthesis error:', error);
@@ -744,6 +794,175 @@ class BookReader {
             alert(`Error: ${error.message || 'Failed to synthesize speech'}`);
         } finally {
             this.isLoadingAudio = false;
+        }
+    }
+
+    async speakWithOnDemandTTS(text, isNewParagraph = true) {
+        // Original on-demand TTS logic
+        if (isNewParagraph) {
+            this.currentChunks = this.splitTextIntoChunks(text);
+            this.currentChunkIndex = 0;
+        }
+
+        const chunk = this.currentChunks[this.currentChunkIndex];
+        const settings = storage.getSettings();
+        const voiceId = settings.voiceId || 'en-US-Standard-A';
+        const speed = settings.speed || 1.0;
+        const pitch = settings.pitch || 0;
+
+        const cacheKey = `${voiceId}-${speed}-${pitch}-${chunk.substring(0, 50)}`;
+
+        let audioContent;
+        if (this.audioCache.has(cacheKey)) {
+            audioContent = this.audioCache.get(cacheKey);
+        } else {
+            const result = await ttsApi.synthesize(chunk, voiceId, speed, pitch);
+            audioContent = result.audioContent;
+
+            this.trackUsage(result.characterCount);
+
+            if (this.audioCache.size > 20) {
+                const firstKey = this.audioCache.keys().next().value;
+                this.audioCache.delete(firstKey);
+            }
+            this.audioCache.set(cacheKey, audioContent);
+        }
+
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+        }
+
+        this.currentAudio = ttsApi.createAudioElement(audioContent);
+
+        this.currentAudio.onended = () => {
+            if (this.isPlaying) {
+                if (this.currentChunkIndex < this.currentChunks.length - 1) {
+                    this.currentChunkIndex++;
+                    this.speak(text, false);
+                } else {
+                    this.nextParagraph();
+                }
+            }
+        };
+
+        this.currentAudio.onerror = (error) => {
+            console.error('Audio playback error:', error);
+            this.pause();
+            alert('Error playing audio. Please try again.');
+        };
+
+        await this.currentAudio.play();
+    }
+
+    async checkForExistingChapterAudio(chapterIndex) {
+        // Only check if we have book backend ID and are authenticated
+        if (!this.book || !this.book.backendId || !ttsApi.isAuthenticated()) {
+            return;
+        }
+
+        try {
+            console.log(`Checking for existing chapter audio for chapter ${chapterIndex}...`);
+            const result = await ttsApi.getChapterAudio(this.book.backendId, chapterIndex);
+
+            if (result && result.audioUrl) {
+                console.log(`✅ Found existing chapter audio for chapter ${chapterIndex}`);
+                this.chapterAudio = result;
+                this.currentChapterIndex = chapterIndex;
+
+                // Update button to indicate chapter audio is available
+                const btn = document.getElementById('generate-chapter');
+                if (btn) {
+                    btn.textContent = '✅';
+                    btn.title = 'Chapter audio ready (click to regenerate)';
+                }
+            } else {
+                console.log(`No existing chapter audio for chapter ${chapterIndex}`);
+            }
+        } catch (error) {
+            console.error('Failed to check for existing chapter audio:', error);
+            // Silently fail - not critical
+        }
+    }
+
+    async generateCurrentChapterAudio() {
+        if (!ttsApi.isAuthenticated()) {
+            alert('Please login to generate chapter audio');
+            return;
+        }
+
+        if (!this.book || !this.book.backendId) {
+            alert('Book not synced to backend. Please upload the book first.');
+            return;
+        }
+
+        if (this.currentParagraphs.length === 0) {
+            alert('No text available. Please wait for the page to load.');
+            return;
+        }
+
+        // Get current chapter index
+        const location = this.rendition.currentLocation();
+        if (!location || !location.start) {
+            alert('Cannot determine current chapter');
+            return;
+        }
+
+        const chapterIndex = location.start.index;
+        console.log(`Generating audio for chapter ${chapterIndex}...`);
+
+        // Format chunks for backend (with chunkId)
+        const chunks = this.currentParagraphs.map((para, index) => ({
+            chunkId: index,
+            text: para.textContent || para
+        }));
+
+        try {
+            // Disable button during generation
+            const btn = document.getElementById('generate-chapter');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳';
+            }
+
+            // Get settings
+            const settings = storage.getSettings();
+            const voiceId = settings.voiceId || 'en-US-Neural2-A';
+            const speed = settings.speed || 1.0;
+            const pitch = settings.pitch || 0;
+
+            // Generate chapter audio
+            const result = await ttsApi.generateChapterAudio(
+                this.book.backendId,
+                chapterIndex,
+                chunks,
+                voiceId,
+                speed,
+                pitch
+            );
+
+            // Store chapter audio data
+            this.chapterAudio = result;
+            this.currentChapterIndex = chapterIndex;
+
+            console.log(`✅ Chapter audio generated: ${result.chunkTimings.length} chunks, ${result.duration.toFixed(1)}s`);
+            alert(`Chapter audio generated successfully! ${result.chunkTimings.length} chunks, ${result.duration.toFixed(1)}s`);
+
+            // Re-enable button
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '✅';
+                btn.title = 'Chapter audio ready (click to regenerate)';
+            }
+        } catch (error) {
+            console.error('Failed to generate chapter audio:', error);
+            alert(`Failed to generate chapter audio: ${error.message}`);
+
+            // Re-enable button
+            const btn = document.getElementById('generate-chapter');
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '↓';
+            }
         }
     }
 

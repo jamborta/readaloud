@@ -14,7 +14,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv pip install --system --no-cache -r pyproject.toml
 
 # Copy application code
-COPY main.py ./
+COPY main.py tts_provider.py ./
 
 # Expose port (Cloud Run will set PORT env var)
 ENV PORT=8080
