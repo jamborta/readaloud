@@ -880,12 +880,64 @@ class BookReader {
     }
 
     highlightParagraph(index) {
-        // TODO: Implement highlighting
-        console.log('TODO: Highlight paragraph', index);
+        if (this.currentParagraphs.length === 0) return;
+
+        // Remove previous highlight
+        this.removeHighlight();
+
+        if (!this.currentParagraphs[index]) return;
+
+        const paragraph = this.currentParagraphs[index];
+        const textToFind = paragraph.textContent.trim();
+
+        // For EPUB mode - access iframe and highlight
+        if (this.book.fileType === 'epub' && this.rendition) {
+            const iframe = document.querySelector('#viewer iframe');
+            if (!iframe || !iframe.contentDocument) return;
+
+            const doc = iframe.contentDocument;
+            const allElements = doc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, div, span, section, article');
+
+            // Search for matching element
+            for (const el of allElements) {
+                const elementText = el.textContent.trim().replace(/\s+/g, ' ');
+                const searchText = textToFind.replace(/\s+/g, ' ');
+
+                // Strategy 1: Exact match
+                if (elementText === searchText) {
+                    this.applyHighlight(el);
+                    return;
+                }
+
+                // Strategy 2: Match first 100 chars
+                if (searchText.length > 50 && elementText.startsWith(searchText.substring(0, 100))) {
+                    this.applyHighlight(el);
+                    return;
+                }
+
+                // Strategy 3: Element contains search text
+                if (elementText.includes(searchText) && searchText.length > 30) {
+                    this.applyHighlight(el);
+                    return;
+                }
+            }
+        }
+    }
+
+    applyHighlight(el) {
+        el.style.backgroundColor = 'rgba(255, 255, 0, 0.3)';
+        el.style.transition = 'background-color 0.2s ease';
+        this.currentHighlightElement = el;
+
+        // Scroll into view
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     removeHighlight() {
-        // TODO: Implement highlight removal
+        if (this.currentHighlightElement) {
+            this.currentHighlightElement.style.backgroundColor = '';
+            this.currentHighlightElement = null;
+        }
     }
 
     async saveReadingPosition() {
