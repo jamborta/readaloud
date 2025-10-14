@@ -262,6 +262,10 @@ class StorageManager {
                     // Add type-specific fields
                     if (position.type === 'epub' && position.cfi) {
                         positionData.cfi = position.cfi;
+                        // Also include paragraphIndex for EPUB (for precise positioning within page)
+                        if (position.paragraphIndex !== undefined) {
+                            positionData.paragraphIndex = position.paragraphIndex;
+                        }
                     } else if (position.type === 'pdf') {
                         positionData.paragraphIndex = position.paragraphIndex;
                         positionData.totalParagraphs = position.totalParagraphs;
