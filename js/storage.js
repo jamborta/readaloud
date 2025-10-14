@@ -260,9 +260,19 @@ class StorageManager {
                     };
 
                     // Add type-specific fields
-                    if (position.type === 'epub' && position.cfi) {
-                        positionData.cfi = position.cfi;
-                        // Also include paragraphIndex for EPUB (for precise positioning within page)
+                    if (position.type === 'epub') {
+                        // New chapter-based format (device-independent)
+                        if (position.chapterIndex !== undefined) {
+                            positionData.chapterIndex = position.chapterIndex;
+                        }
+                        if (position.chapterChunkIndex !== undefined) {
+                            positionData.chapterChunkIndex = position.chapterChunkIndex;
+                        }
+
+                        // Legacy CFI support (fallback for old positions)
+                        if (position.cfi) {
+                            positionData.cfi = position.cfi;
+                        }
                         if (position.paragraphIndex !== undefined) {
                             positionData.paragraphIndex = position.paragraphIndex;
                         }
