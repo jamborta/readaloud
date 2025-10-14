@@ -1654,14 +1654,30 @@ class BookReader {
     }
 
     async saveReadingPosition() {
-        if (this.book.fileType === 'epub' && this.currentLocation) {
-            // Save page CFI + paragraph index for precise positioning
-            console.log(`💾 Saving position: page CFI + paragraph ${this.currentParagraphIndex}`);
+        if (this.book.fileType === 'epub' && this.currentChapterIndex !== null) {
+            // Map current paragraph to chapter chunk (device-independent)
+            let chapterChunkIndex = -1;
+
+            if (this.currentParagraphs.length > 0 && this.chapterChunks.length > 0 && this.currentParagraphIndex >= 0) {
+                const paragraph = this.currentParagraphs[this.currentParagraphIndex];
+                const paragraphText = (paragraph.textContent || paragraph).replace(/\s+/g, ' ').trim();
+                const searchText = paragraphText.substring(0, 100);
+
+                for (let i = 0; i < this.chapterChunks.length; i++) {
+                    const normalizedChunk = this.chapterChunks[i].replace(/\s+/g, ' ').trim();
+                    if (normalizedChunk.includes(searchText) || searchText.includes(normalizedChunk.substring(0, 100))) {
+                        chapterChunkIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            console.log(`💾 Saving position: chapter ${this.currentChapterIndex}, chunk ${chapterChunkIndex}`);
 
             await storage.saveReadingPosition(this.bookId, {
-                cfi: this.currentLocation,
                 type: 'epub',
-                paragraphIndex: this.currentParagraphIndex
+                chapterIndex: this.currentChapterIndex,
+                chapterChunkIndex: chapterChunkIndex
             });
         } else if (this.book.fileType === 'pdf') {
             await storage.saveReadingPosition(this.bookId, {
@@ -1748,28 +1764,65 @@ class BookReader {
             }
 
             // Load the position
-            if (position && position.type === 'epub' && position.cfi && this.rendition) {
+            if (position && position.type === 'epub' && position.chapterIndex !== undefined && this.rendition) {
                 try {
-                    await this.rendition.display(position.cfi);
-                    console.log('📖 Loaded EPUB position:', position.cfi);
+                    // Navigate to saved chapter using device-independent chapter index
+                    const section = this.epubBook.spine.get(position.chapterIndex);
+                    if (!section) {
+                        console.error('❌ Invalid chapter index:', position.chapterIndex);
+                        return;
+                    }
+
+                    console.log(`📖 Loading chapter ${position.chapterIndex}, chunk ${position.chapterChunkIndex}...`);
+                    await this.rendition.display(section.href);
 
                     // Wait for the relocated event to finish processing
-                    // Give it time to complete before allowing auto-saves
                     await new Promise(resolve => setTimeout(resolve, 500));
 
-                    // Restore paragraph index if available (for precise positioning within page)
-                    if (position.paragraphIndex !== undefined && position.paragraphIndex > 0) {
-                        // Wait for text extraction to complete
-                        await this.textExtractionPromise;
+                    // Wait for text extraction to complete
+                    await this.textExtractionPromise;
 
-                        // Restore paragraph index and highlight
-                        const validIndex = Math.min(position.paragraphIndex, this.currentParagraphs.length - 1);
-                        if (validIndex >= 0) {
-                            this.currentParagraphIndex = validIndex;
-                            this.highlightParagraph(validIndex);
-                            console.log(`📍 Restored paragraph position: ${validIndex}/${this.currentParagraphs.length - 1}`);
-                        }
+                    // Load chapter chunks if not already loaded
+                    if (!this.chapterChunks || this.chapterChunks.length === 0 || this.currentChapterIndex !== position.chapterIndex) {
+                        console.log(`📚 Loading chapter chunks for chapter ${position.chapterIndex}...`);
+                        this.chapterChunks = await this.loadChapterChunks(position.chapterIndex);
+                        this.currentChapterIndex = position.chapterIndex;
                     }
+
+                    // Find the saved chunk and map to paragraph
+                    if (position.chapterChunkIndex >= 0 && position.chapterChunkIndex < this.chapterChunks.length) {
+                        const targetChunkText = this.chapterChunks[position.chapterChunkIndex];
+                        const searchText = targetChunkText.substring(0, 100).replace(/\s+/g, ' ').trim();
+
+                        console.log(`🔍 Searching for chunk ${position.chapterChunkIndex}: "${searchText.substring(0, 50)}..."`);
+
+                        // Find matching paragraph on current page
+                        let found = false;
+                        for (let i = 0; i < this.currentParagraphs.length; i++) {
+                            const para = this.currentParagraphs[i];
+                            const paraText = (para.textContent || para).replace(/\s+/g, ' ').trim();
+
+                            if (paraText.includes(searchText) || searchText.includes(paraText.substring(0, 100))) {
+                                console.log(`✅ Found chunk at paragraph ${i}`);
+                                this.currentParagraphIndex = i;
+                                this.highlightParagraph(i);
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        if (!found) {
+                            console.log(`⚠️ Chunk not found on current page, starting from beginning of chapter`);
+                            this.currentParagraphIndex = 0;
+                            this.highlightParagraph(0);
+                        }
+                    } else {
+                        console.log(`ℹ️ No chunk index saved, starting from beginning of chapter`);
+                        this.currentParagraphIndex = 0;
+                        this.highlightParagraph(0);
+                    }
+
+                    console.log(`✅ Position loaded: Chapter ${position.chapterIndex}, Chunk ${position.chapterChunkIndex}, Paragraph ${this.currentParagraphIndex}`);
                 } catch (error) {
                     console.error('Failed to load position:', error);
                 }
