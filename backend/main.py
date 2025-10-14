@@ -9,7 +9,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
 import hashlib
 import hmac
@@ -225,7 +225,7 @@ async def root():
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.post("/api/register", response_model=Token)
@@ -258,7 +258,7 @@ async def register(user: UserRegister):
     user_data = {
         "username": user.username,
         "hashed_password": hashed_password,
-        "created_at": datetime.now().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "total_characters_used": 0,
     }
     user_ref.set(user_data)
@@ -438,7 +438,7 @@ async def save_book(book: BookMetadata, username: str = Depends(verify_token)):
     books_ref = db.collection('users').document(username).collection('books')
 
     book_data = book.dict(exclude={'fileData'})
-    book_data['uploadedAt'] = datetime.now().isoformat()
+    book_data['uploadedAt'] = datetime.now(timezone.utc).isoformat()
 
     # Store file in Cloud Storage if provided
     if book.fileData and bucket:
@@ -584,7 +584,7 @@ async def save_position(position: ReadingPosition, username: str = Depends(verif
     position_ref = db.collection('users').document(username).collection('positions').document(position.bookId)
 
     position_data = position.dict()
-    position_data['lastRead'] = datetime.now().isoformat()
+    position_data['lastRead'] = datetime.now(timezone.utc).isoformat()
 
     position_ref.set(position_data)
 
@@ -658,7 +658,7 @@ async def generate_chunk_audio(request: ChunkAudioRequest, username: str = Depen
         return ChunkAudioResponse(
             audioUrl=audio_url,
             chunkId=request.chunkId,
-            generatedAt=datetime.now().isoformat()
+            generatedAt=datetime.now(timezone.utc).isoformat()
         )
 
     except Exception as e:
