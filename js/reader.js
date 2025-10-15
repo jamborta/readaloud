@@ -524,8 +524,11 @@ class BookReader {
                 return [];
             }
 
-            // Load the section content
-            await section.load(this.epubBook.load.bind(this.epubBook));
+            // Load the section content ONLY if not already loaded
+            // This prevents potential re-rendering on mobile devices
+            if (!section.document) {
+                await section.load(this.epubBook.load.bind(this.epubBook));
+            }
             const sectionDoc = section.document;
 
             if (!sectionDoc || !sectionDoc.body) {
