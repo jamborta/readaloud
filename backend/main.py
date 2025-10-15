@@ -136,9 +136,11 @@ class BookMetadata(BaseModel):
 class ReadingPosition(BaseModel):
     bookId: str
     type: str  # 'epub' or 'pdf'
-    cfi: Optional[str] = None  # For EPUB positions
+    cfi: Optional[str] = None  # For EPUB positions (legacy)
     paragraphIndex: Optional[int] = None  # For PDF positions
     totalParagraphs: Optional[int] = None  # For PDF positions
+    chapterIndex: Optional[int] = None  # For EPUB chapter-based positioning (device-independent)
+    chapterChunkIndex: Optional[int] = None  # For EPUB chapter-based positioning (device-independent)
     lastRead: Optional[str] = None
 
 

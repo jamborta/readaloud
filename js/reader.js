@@ -930,13 +930,25 @@ class BookReader {
                     };
 
                     // Set up ended handler to move to next chapter chunk
-                    this.currentAudio.onended = () => {
+                    this.currentAudio.onended = async () => {
                         if (this.isPlaying) {
-                            this.nextChapterChunk();
+                            // On mobile, we need to call play() synchronously in the ended handler
+                            // Otherwise the browser blocks it
+                            try {
+                                await this.nextChapterChunk();
+                            } catch (error) {
+                                console.error('Error in onended:', error);
+                                this.pause();
+                            }
                         }
                     };
 
-                    await this.currentAudio.play();
+                    try {
+                        await this.currentAudio.play();
+                    } catch (error) {
+                        console.error('Playback error:', error.message);
+                        throw new Error(`Cannot play audio: ${error.message}`);
+                    }
                     return;
                 }
             }
@@ -1774,50 +1786,69 @@ class BookReader {
                     }
 
                     console.log(`📖 Loading chapter ${position.chapterIndex}, chunk ${position.chapterChunkIndex}...`);
-                    await this.rendition.display(section.href);
 
-                    // Wait for the relocated event to finish processing
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    // Load chapter chunks first to know where to jump
+                    console.log(`📚 Loading chapter chunks for chapter ${position.chapterIndex}...`);
+                    this.chapterChunks = await this.loadChapterChunks(position.chapterIndex);
+                    this.currentChapterIndex = position.chapterIndex;
 
-                    // Wait for text extraction to complete
-                    await this.textExtractionPromise;
-
-                    // Load chapter chunks if not already loaded
-                    if (!this.chapterChunks || this.chapterChunks.length === 0 || this.currentChapterIndex !== position.chapterIndex) {
-                        console.log(`📚 Loading chapter chunks for chapter ${position.chapterIndex}...`);
-                        this.chapterChunks = await this.loadChapterChunks(position.chapterIndex);
-                        this.currentChapterIndex = position.chapterIndex;
-                    }
-
-                    // Find the saved chunk and map to paragraph
+                    // Find the saved chunk text
                     if (position.chapterChunkIndex >= 0 && position.chapterChunkIndex < this.chapterChunks.length) {
                         const targetChunkText = this.chapterChunks[position.chapterChunkIndex];
                         const searchText = targetChunkText.substring(0, 100).replace(/\s+/g, ' ').trim();
 
-                        console.log(`🔍 Searching for chunk ${position.chapterChunkIndex}: "${searchText.substring(0, 50)}..."`);
+                        console.log(`🎯 Looking for chunk ${position.chapterChunkIndex}: "${searchText.substring(0, 50)}..."`);
 
-                        // Find matching paragraph on current page
+                        // Generate a CFI that points to this text within the chapter
+                        // We'll search for the text in the chapter document
+                        await section.load(this.epubBook.load.bind(this.epubBook));
+                        const sectionDoc = section.document;
+
+                        // Find the text in the chapter
+                        const walker = sectionDoc.createTreeWalker(sectionDoc.body, NodeFilter.SHOW_TEXT, null);
+                        let node;
                         let found = false;
-                        for (let i = 0; i < this.currentParagraphs.length; i++) {
-                            const para = this.currentParagraphs[i];
-                            const paraText = (para.textContent || para).replace(/\s+/g, ' ').trim();
 
-                            if (paraText.includes(searchText) || searchText.includes(paraText.substring(0, 100))) {
-                                console.log(`✅ Found chunk at paragraph ${i}`);
-                                this.currentParagraphIndex = i;
-                                this.highlightParagraph(i);
+                        while (node = walker.nextNode()) {
+                            const nodeText = node.textContent.replace(/\s+/g, ' ').trim();
+                            if (nodeText.includes(searchText) || searchText.includes(nodeText.substring(0, 100))) {
+                                // Found it! Generate CFI for this node's parent element
+                                const cfi = section.cfiFromElement(node.parentElement);
+                                console.log(`✅ Found chunk in chapter, jumping to CFI: ${cfi}`);
+
+                                // Jump directly to this CFI
+                                await this.rendition.display(cfi);
                                 found = true;
                                 break;
                             }
                         }
 
                         if (!found) {
-                            console.log(`⚠️ Chunk not found on current page, starting from beginning of chapter`);
-                            this.currentParagraphIndex = 0;
-                            this.highlightParagraph(0);
+                            console.log(`⚠️ Could not find chunk in chapter, jumping to chapter start`);
+                            await this.rendition.display(section.href);
+                        }
+
+                        // Wait for page to load
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await this.textExtractionPromise;
+
+                        // Find and highlight the chunk on the current page
+                        for (let i = 0; i < this.currentParagraphs.length; i++) {
+                            const para = this.currentParagraphs[i];
+                            const paraText = (para.textContent || para).replace(/\s+/g, ' ').trim();
+
+                            if (paraText.includes(searchText) || searchText.includes(paraText.substring(0, 100))) {
+                                console.log(`✅ Highlighted chunk at paragraph ${i}`);
+                                this.currentParagraphIndex = i;
+                                this.highlightParagraph(i);
+                                break;
+                            }
                         }
                     } else {
-                        console.log(`ℹ️ No chunk index saved, starting from beginning of chapter`);
+                        console.log(`ℹ️ No valid chunk index, starting from beginning of chapter`);
+                        await this.rendition.display(section.href);
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await this.textExtractionPromise;
                         this.currentParagraphIndex = 0;
                         this.highlightParagraph(0);
                     }
