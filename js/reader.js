@@ -524,10 +524,22 @@ class BookReader {
                 return [];
             }
 
+            // Save current location before loading section (to restore after on mobile)
+            const savedCfi = this.rendition ? this.rendition.currentLocation()?.start.cfi : null;
+
             // Load the section content ONLY if not already loaded
             // This prevents potential re-rendering on mobile devices
             if (!section.document) {
                 await section.load(this.epubBook.load.bind(this.epubBook));
+
+                // On mobile, section.load() may cause navigation - restore position
+                if (savedCfi && this.rendition) {
+                    const currentCfi = this.rendition.currentLocation()?.start.cfi;
+                    if (currentCfi !== savedCfi) {
+                        console.log('📍 Restoring position after section.load()');
+                        await this.rendition.display(savedCfi);
+                    }
+                }
             }
             const sectionDoc = section.document;
 
