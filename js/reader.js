@@ -930,16 +930,11 @@ class BookReader {
                     };
 
                     // Set up ended handler to move to next chapter chunk
-                    this.currentAudio.onended = async () => {
+                    this.currentAudio.onended = () => {
                         if (this.isPlaying) {
-                            // On mobile, we need to call play() synchronously in the ended handler
-                            // Otherwise the browser blocks it
-                            try {
-                                await this.nextChapterChunk();
-                            } catch (error) {
-                                console.error('Error in onended:', error);
-                                this.pause();
-                            }
+                            // CRITICAL: For mobile browsers, we must call play() SYNCHRONOUSLY
+                            // in the onended handler without any awaits/async in between
+                            this.playNextChapterChunkSync();
                         }
                     };
 
@@ -962,6 +957,118 @@ class BookReader {
             alert(`Error: ${error.message || 'Failed to synthesize speech'}`);
         } finally {
             this.isLoadingAudio = false;
+        }
+    }
+
+    playNextChapterChunkSync() {
+        /**
+         * CRITICAL: Synchronous method to play next chunk
+         * This is called from onended handler and MUST call play() synchronously
+         * to avoid mobile browser blocking
+         */
+        if (this.currentChapterChunkIndex < 0 || this.chapterChunks.length === 0) {
+            console.error('Invalid state for sync playback');
+            return;
+        }
+
+        // Move to next chunk
+        const nextChunkIndex = this.currentChapterChunkIndex + 1;
+
+        if (nextChunkIndex >= this.chapterChunks.length) {
+            console.log('Reached end of chapter chunks');
+            this.pause();
+            return;
+        }
+
+        // Check if we have audio URL cached for next chunk
+        if (!this.chunkAudioCache.has(nextChunkIndex)) {
+            console.log(`⚠️ No cached audio for chunk ${nextChunkIndex}, stopping playback`);
+            this.pause();
+            return;
+        }
+
+        // Update index
+        this.currentChapterChunkIndex = nextChunkIndex;
+
+        // Get audio URL synchronously from cache
+        const audioUrl = this.chunkAudioCache.get(nextChunkIndex);
+        console.log(`🔊 Playing chunk ${nextChunkIndex} synchronously`);
+
+        // Stop current audio
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+        }
+
+        // Create and play new audio SYNCHRONOUSLY
+        this.currentAudio = new Audio(audioUrl);
+
+        this.currentAudio.onerror = (error) => {
+            console.error('Chunk audio playback error:', error);
+            this.pause();
+        };
+
+        // Set up ended handler for next chunk (recursive)
+        this.currentAudio.onended = () => {
+            if (this.isPlaying) {
+                this.playNextChapterChunkSync();
+            }
+        };
+
+        // SYNCHRONOUS play() call - no await!
+        this.currentAudio.play().catch(error => {
+            console.error('Failed to play chunk:', error);
+            this.pause();
+        });
+
+        // Update paragraph index if chunk is on current page (async, but doesn't block audio)
+        this.updateParagraphIndexForChunk(nextChunkIndex);
+    }
+
+    async updateParagraphIndexForChunk(chunkIndex) {
+        /**
+         * Update paragraph index and highlighting for the given chunk
+         * This runs async after audio starts playing
+         */
+        const chunkText = this.chapterChunks[chunkIndex];
+        const searchText = chunkText.substring(0, 100).replace(/\s+/g, ' ').trim();
+
+        // Find chunk on current page
+        for (let i = 0; i < this.currentParagraphs.length; i++) {
+            const para = this.currentParagraphs[i];
+            const paraText = (para.textContent || para).replace(/\s+/g, ' ').trim();
+
+            if (paraText.includes(searchText) || searchText.includes(paraText.substring(0, 100))) {
+                this.currentParagraphIndex = i;
+                this.highlightParagraph(i);
+                return;
+            }
+        }
+
+        // Not on current page - need to turn page
+        console.log(`📄 Chunk ${chunkIndex} not on current page`);
+
+        if (this.book.fileType === 'epub' && this.rendition) {
+            const moved = this.rendition.next();
+            if (moved) {
+                // Wait for page to load
+                const oldPromise = this.textExtractionPromise;
+                while (this.textExtractionPromise === oldPromise) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+                await this.textExtractionPromise;
+
+                // Try to find chunk on new page
+                for (let i = 0; i < this.currentParagraphs.length; i++) {
+                    const para = this.currentParagraphs[i];
+                    const paraText = (para.textContent || para).replace(/\s+/g, ' ').trim();
+
+                    if (paraText.includes(searchText) || searchText.includes(paraText.substring(0, 100))) {
+                        this.currentParagraphIndex = i;
+                        this.highlightParagraph(i);
+                        return;
+                    }
+                }
+            }
         }
     }
 
