@@ -1179,7 +1179,7 @@ class BookReader {
     }
 
     async speakWithOnDemandTTS(text, isNewParagraph = true) {
-        // Original on-demand TTS logic
+        // On-demand TTS with mobile-safe synchronous playback
         // Reset chapter chunk tracking when using on-demand TTS
         this.currentChapterChunkIndex = -1;
 
@@ -1218,12 +1218,15 @@ class BookReader {
 
         this.currentAudio = ttsApi.createAudioElement(audioContent);
 
+        // CRITICAL: Use synchronous onended handler for mobile browser compatibility
         this.currentAudio.onended = () => {
             if (this.isPlaying) {
                 if (this.currentChunkIndex < this.currentChunks.length - 1) {
+                    // More chunks in current paragraph - play next chunk synchronously
                     this.currentChunkIndex++;
-                    this.speak(text, false);
+                    this.playNextOnDemandChunkSync(text);
                 } else {
+                    // Move to next paragraph asynchronously (not chained from audio)
                     this.nextParagraph();
                 }
             }
@@ -1235,7 +1238,78 @@ class BookReader {
             alert('Error playing audio. Please try again.');
         };
 
-        await this.currentAudio.play();
+        // Use .catch() pattern instead of await to maintain initial sync for first chunk
+        try {
+            await this.currentAudio.play();
+        } catch (error) {
+            console.error('Playback error:', error.message);
+            throw error;
+        }
+    }
+
+    playNextOnDemandChunkSync(text) {
+        /**
+         * CRITICAL: Synchronous method to play next on-demand TTS chunk
+         * This is called from onended handler and MUST call play() synchronously
+         * to avoid mobile browser blocking
+         */
+        if (this.currentChunkIndex < 0 || this.currentChunks.length === 0) {
+            console.error('Invalid state for on-demand sync playback');
+            return;
+        }
+
+        const chunk = this.currentChunks[this.currentChunkIndex];
+        const settings = storage.getSettings();
+        const voiceId = settings.voiceId || 'en-US-Standard-A';
+        const speed = settings.speed || 1.0;
+        const pitch = settings.pitch || 0;
+
+        const cacheKey = `${voiceId}-${speed}-${pitch}-${chunk.substring(0, 50)}`;
+
+        // Check if cached
+        if (!this.audioCache.has(cacheKey)) {
+            // Not cached - need to synthesize (this breaks sync chain, but unavoidable)
+            console.log(`⚠️ Chunk ${this.currentChunkIndex} not cached, need async synthesis`);
+            // Fall back to async speak
+            this.speak(text, false);
+            return;
+        }
+
+        // Get from cache synchronously
+        const audioContent = this.audioCache.get(cacheKey);
+
+        // Stop current audio
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+        }
+
+        // Create and play new audio SYNCHRONOUSLY
+        this.currentAudio = ttsApi.createAudioElement(audioContent);
+
+        this.currentAudio.onerror = (error) => {
+            console.error('On-demand chunk playback error:', error);
+            this.pause();
+        };
+
+        // Set up ended handler for next chunk (recursive)
+        this.currentAudio.onended = () => {
+            if (this.isPlaying) {
+                if (this.currentChunkIndex < this.currentChunks.length - 1) {
+                    // More chunks - play next synchronously
+                    this.currentChunkIndex++;
+                    this.playNextOnDemandChunkSync(text);
+                } else {
+                    // Move to next paragraph
+                    this.nextParagraph();
+                }
+            }
+        };
+
+        // SYNCHRONOUS play() call - no await!
+        this.currentAudio.play().catch(error => {
+            console.error('Failed to play on-demand chunk:', error);
+            this.pause();
+        });
     }
 
     async checkForExistingChapterAudio(chapterIndex) {
