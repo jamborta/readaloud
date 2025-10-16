@@ -933,13 +933,15 @@ class BookReader {
                     const audioUrl = this.chunkAudioCache.get(chapterChunkIndex);
                     console.log(`🔊 Playing cached audio for chunk ${chapterChunkIndex}`);
 
-                    // Stop current audio if playing
-                    if (this.currentAudio) {
-                        this.currentAudio.pause();
+                    // CRITICAL: Reuse SAME Audio element for iOS Safari
+                    // Creating new Audio() breaks user interaction chain on mobile
+                    if (!this.currentAudio) {
+                        this.currentAudio = new Audio();
                     }
 
-                    // Load chunk audio
-                    this.currentAudio = new Audio(audioUrl);
+                    // Just change the source and reload
+                    this.currentAudio.src = audioUrl;
+                    this.currentAudio.load();
 
                     this.currentAudio.onerror = (error) => {
                         console.error('Chunk audio playback error:', error);
@@ -1010,7 +1012,8 @@ class BookReader {
                         this.chunkAudioCache.set(nextChunkIndex, result.audioUrl);
 
                         // If still playing, try to play this chunk now
-                        if (this.isPlaying && this.currentChapterChunkIndex === nextChunkIndex) {
+                        // Note: currentChapterChunkIndex is still pointing to previous chunk, so add 1
+                        if (this.isPlaying && this.currentChapterChunkIndex + 1 === nextChunkIndex) {
                             this.playNextChapterChunkSync();
                         }
                     } else {
@@ -1032,13 +1035,15 @@ class BookReader {
         const audioUrl = this.chunkAudioCache.get(nextChunkIndex);
         console.log(`🔊 Playing chunk ${nextChunkIndex} synchronously`);
 
-        // Stop current audio
-        if (this.currentAudio) {
-            this.currentAudio.pause();
+        // CRITICAL: Reuse SAME Audio element for iOS Safari
+        // Creating new Audio() breaks user interaction chain on mobile
+        if (!this.currentAudio) {
+            this.currentAudio = new Audio();
         }
 
-        // Create and play new audio SYNCHRONOUSLY
-        this.currentAudio = new Audio(audioUrl);
+        // Just change the source and reload
+        this.currentAudio.src = audioUrl;
+        this.currentAudio.load();
 
         this.currentAudio.onerror = (error) => {
             console.error('Chunk audio playback error:', error);
