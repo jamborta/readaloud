@@ -762,7 +762,7 @@ input:-ms-placeholder {
 @media only screen and (max-device-width: 480px) and (orientation: portrait) {
     #viewer {
       width: 90%;
-      height: calc(100vh - 120px); /* Full height minus titlebar and TTS controls */
+      height: calc(100vh - 60px); /* Full height minus titlebar (TTS controls hidden on mobile) */
     }
     #viewer iframe {
        width: 100%;
@@ -773,7 +773,7 @@ input:-ms-placeholder {
 @media only screen and (max-device-width: 480px) and (orientation: landscape) {
     #viewer {
         width: 90%;
-        height: calc(100vh - 120px); /* Full height minus titlebar and TTS controls */
+        height: calc(100vh - 60px); /* Full height minus titlebar (TTS controls hidden on mobile) */
     }
     #viewer iframe {
         width: 100%;

@@ -87,6 +87,10 @@ class BookReader {
         }
     }
 
+    isMobileDevice() {
+        return window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+
     setupEventListeners() {
         // Sidebar toggle - simple!
         const slider = document.getElementById('slider');
@@ -129,6 +133,12 @@ class BookReader {
             document.getElementById('generate-chapter').addEventListener('click', () => {
                 this.generateCurrentChapterAudio();
             });
+        }
+
+        // Mobile tap-to-play: tap on EPUB content to toggle play/pause
+        if (this.isMobileDevice()) {
+            console.log('📱 Mobile device detected - enabling tap-to-play');
+            this.setupMobileTapToPlay();
         }
 
         // Navigation arrows (for EPUB)
@@ -191,6 +201,38 @@ class BookReader {
         }
     }
 
+    setupMobileTapToPlay() {
+        // Set up tap-to-play for mobile devices
+        // This will add a click handler to the EPUB iframe content once it's rendered
+        if (this.rendition) {
+            this.rendition.on('rendered', () => {
+                const iframe = document.querySelector('#viewer iframe');
+                if (iframe && iframe.contentDocument) {
+                    // Remove any existing handler first
+                    if (this.mobileTapHandler) {
+                        iframe.contentDocument.removeEventListener('click', this.mobileTapHandler);
+                    }
+
+                    // Create new handler
+                    this.mobileTapHandler = (e) => {
+                        // Ignore clicks on links
+                        if (e.target.tagName === 'A') {
+                            return;
+                        }
+
+                        // Toggle play/pause
+                        e.preventDefault();
+                        this.togglePlayPause();
+                    };
+
+                    // Add handler
+                    iframe.contentDocument.addEventListener('click', this.mobileTapHandler);
+                    console.log('✅ Mobile tap-to-play handler attached');
+                }
+            });
+        }
+    }
+
     async renderEPUB() {
         try {
             const uint8Array = new Uint8Array(this.book.fileData);
@@ -234,6 +276,11 @@ class BookReader {
 
                 // Extract text for TTS when page changes - pass location to avoid stale data
                 await this.extractCurrentPageText(location);
+
+                // Re-attach mobile tap handler after page changes
+                if (this.isMobileDevice()) {
+                    this.setupMobileTapToPlay();
+                }
             });
 
             // Display the book at beginning (will be overridden by loadReadingPosition if position exists)
