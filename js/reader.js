@@ -203,12 +203,15 @@ class BookReader {
             // Create EPUB book from array buffer
             this.epubBook = ePub(uint8Array.buffer);
 
-            // Create paginated rendition
+            // Create paginated rendition with mobile-friendly settings
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
             this.rendition = this.epubBook.renderTo("viewer", {
                 width: "100%",
                 height: "100%",
                 flow: "paginated",
-                spread: "auto"  // Show two pages side by side
+                spread: isMobile ? "none" : "auto",  // Single page on mobile, two pages on desktop
+                snap: true,  // Snap to page boundaries (prevents half-page issue)
+                allowScriptedContent: true
             });
 
             // Track location changes first
