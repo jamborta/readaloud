@@ -203,34 +203,28 @@ class BookReader {
 
     setupMobileTapToPlay() {
         // Set up tap-to-play for mobile devices
-        // This will add a click handler to the EPUB iframe content once it's rendered
-        if (this.rendition) {
-            this.rendition.on('rendered', () => {
-                const iframe = document.querySelector('#viewer iframe');
-                if (iframe && iframe.contentDocument) {
-                    // Remove any existing handler first
-                    if (this.mobileTapHandler) {
-                        iframe.contentDocument.removeEventListener('click', this.mobileTapHandler);
-                    }
+        // Add handler directly to the viewer div that wraps the iframe
+        const viewer = document.getElementById('viewer');
+        if (!viewer) return;
 
-                    // Create new handler
-                    this.mobileTapHandler = (e) => {
-                        // Ignore clicks on links
-                        if (e.target.tagName === 'A') {
-                            return;
-                        }
-
-                        // Toggle play/pause
-                        e.preventDefault();
-                        this.togglePlayPause();
-                    };
-
-                    // Add handler
-                    iframe.contentDocument.addEventListener('click', this.mobileTapHandler);
-                    console.log('✅ Mobile tap-to-play handler attached');
-                }
-            });
+        // Remove existing handler if any
+        if (this.mobileTapHandler) {
+            viewer.removeEventListener('click', this.mobileTapHandler);
         }
+
+        // Create handler that works on the wrapper div
+        this.mobileTapHandler = (e) => {
+            // Ignore navigation arrow clicks
+            if (e.target.id === 'prev' || e.target.id === 'next') {
+                return;
+            }
+
+            console.log('📱 Mobile tap detected, toggling play/pause');
+            this.togglePlayPause();
+        };
+
+        viewer.addEventListener('click', this.mobileTapHandler);
+        console.log('✅ Mobile tap-to-play enabled on viewer');
     }
 
     async renderEPUB() {
@@ -276,11 +270,6 @@ class BookReader {
 
                 // Extract text for TTS when page changes - pass location to avoid stale data
                 await this.extractCurrentPageText(location);
-
-                // Re-attach mobile tap handler after page changes
-                if (this.isMobileDevice()) {
-                    this.setupMobileTapToPlay();
-                }
             });
 
             // Display the book at beginning (will be overridden by loadReadingPosition if position exists)

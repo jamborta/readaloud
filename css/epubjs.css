@@ -741,7 +741,7 @@ input:-ms-placeholder {
 /* For iPad portrait layouts only */
 @media only screen and (min-device-width: 481px) and (max-device-width: 1024px) and (orientation: portrait) {
     #viewer {
-        height: calc(100vh - 100px); /* Full height minus titlebar and TTS controls */
+        height: 85%; /* Dynamic percentage-based height */
     }
     #viewer iframe {
         width: 100%;
@@ -751,7 +751,7 @@ input:-ms-placeholder {
  /*For iPad landscape layouts only */
 @media only screen and (min-device-width: 481px) and (max-device-width: 1024px) and (orientation: landscape) {
     #viewer {
-        height: calc(100vh - 100px); /* Full height minus titlebar and TTS controls */
+        height: 85%; /* Dynamic percentage-based height */
     }
     #viewer iframe {
         width: 100%;
@@ -762,7 +762,7 @@ input:-ms-placeholder {
 @media only screen and (max-device-width: 480px) and (orientation: portrait) {
     #viewer {
       width: 90%;
-      height: calc(100vh - 60px); /* Full height minus titlebar (TTS controls hidden on mobile) */
+      height: 85%; /* Dynamic percentage-based height */
     }
     #viewer iframe {
        width: 100%;
@@ -773,7 +773,7 @@ input:-ms-placeholder {
 @media only screen and (max-device-width: 480px) and (orientation: landscape) {
     #viewer {
         width: 90%;
-        height: calc(100vh - 60px); /* Full height minus titlebar (TTS controls hidden on mobile) */
+        height: 85%; /* Dynamic percentage-based height */
     }
     #viewer iframe {
         width: 100%;
