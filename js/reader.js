@@ -997,8 +997,28 @@ class BookReader {
 
         // Check if we have audio URL cached for next chunk
         if (!this.chunkAudioCache.has(nextChunkIndex)) {
-            console.log(`⚠️ No cached audio for chunk ${nextChunkIndex}, stopping playback`);
-            this.pause();
+            console.log(`⚠️ No cached audio for chunk ${nextChunkIndex}, lazy loading...`);
+
+            // Lazy load the audio URL (this will be async, but happens in background)
+            ttsApi.getChunkAudio(this.book.backendId, this.currentChapterIndex, nextChunkIndex)
+                .then(result => {
+                    if (result && result.audioUrl) {
+                        console.log(`🔗 Lazy loaded audio URL for chunk ${nextChunkIndex}`);
+                        this.chunkAudioCache.set(nextChunkIndex, result.audioUrl);
+
+                        // If still playing, try to play this chunk now
+                        if (this.isPlaying && this.currentChapterChunkIndex === nextChunkIndex) {
+                            this.playNextChapterChunkSync();
+                        }
+                    } else {
+                        console.log(`❌ Chunk ${nextChunkIndex} has no audio, stopping`);
+                        this.pause();
+                    }
+                })
+                .catch(error => {
+                    console.error(`Failed to load chunk ${nextChunkIndex}:`, error);
+                    this.pause();
+                });
             return;
         }
 
@@ -1043,11 +1063,12 @@ class BookReader {
         /**
          * Update paragraph index and highlighting for the given chunk
          * This runs async after audio starts playing
+         * DO NOT turn pages here - that causes jumps on mobile
          */
         const chunkText = this.chapterChunks[chunkIndex];
         const searchText = chunkText.substring(0, 100).replace(/\s+/g, ' ').trim();
 
-        // Find chunk on current page
+        // Find chunk on current page ONLY
         for (let i = 0; i < this.currentParagraphs.length; i++) {
             const para = this.currentParagraphs[i];
             const paraText = (para.textContent || para).replace(/\s+/g, ' ').trim();
@@ -1059,32 +1080,8 @@ class BookReader {
             }
         }
 
-        // Not on current page - need to turn page
-        console.log(`📄 Chunk ${chunkIndex} not on current page`);
-
-        if (this.book.fileType === 'epub' && this.rendition) {
-            const moved = this.rendition.next();
-            if (moved) {
-                // Wait for page to load
-                const oldPromise = this.textExtractionPromise;
-                while (this.textExtractionPromise === oldPromise) {
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                }
-                await this.textExtractionPromise;
-
-                // Try to find chunk on new page
-                for (let i = 0; i < this.currentParagraphs.length; i++) {
-                    const para = this.currentParagraphs[i];
-                    const paraText = (para.textContent || para).replace(/\s+/g, ' ').trim();
-
-                    if (paraText.includes(searchText) || searchText.includes(paraText.substring(0, 100))) {
-                        this.currentParagraphIndex = i;
-                        this.highlightParagraph(i);
-                        return;
-                    }
-                }
-            }
-        }
+        // Chunk not on current page - just log it, DON'T turn page
+        console.log(`📄 Chunk ${chunkIndex} not visible on current page (will continue playing)`);
     }
 
     async nextChapterChunk() {
