@@ -87,10 +87,6 @@ class BookReader {
         }
     }
 
-    isMobileDevice() {
-        return window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    }
-
     setupEventListeners() {
         // Sidebar toggle - simple!
         const slider = document.getElementById('slider');
@@ -133,12 +129,6 @@ class BookReader {
             document.getElementById('generate-chapter').addEventListener('click', () => {
                 this.generateCurrentChapterAudio();
             });
-        }
-
-        // Mobile tap-to-play: tap on EPUB content to toggle play/pause
-        if (this.isMobileDevice()) {
-            console.log('📱 Mobile device detected - enabling tap-to-play');
-            this.setupMobileTapToPlay();
         }
 
         // Navigation arrows (for EPUB)
@@ -199,32 +189,6 @@ class BookReader {
         } else {
             await this.renderPDF();
         }
-    }
-
-    setupMobileTapToPlay() {
-        // Set up tap-to-play for mobile devices
-        // Add handler directly to the viewer div that wraps the iframe
-        const viewer = document.getElementById('viewer');
-        if (!viewer) return;
-
-        // Remove existing handler if any
-        if (this.mobileTapHandler) {
-            viewer.removeEventListener('click', this.mobileTapHandler);
-        }
-
-        // Create handler that works on the wrapper div
-        this.mobileTapHandler = (e) => {
-            // Ignore navigation arrow clicks
-            if (e.target.id === 'prev' || e.target.id === 'next') {
-                return;
-            }
-
-            console.log('📱 Mobile tap detected, toggling play/pause');
-            this.togglePlayPause();
-        };
-
-        viewer.addEventListener('click', this.mobileTapHandler);
-        console.log('✅ Mobile tap-to-play enabled on viewer');
     }
 
     async renderEPUB() {
