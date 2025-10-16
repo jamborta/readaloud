@@ -203,15 +203,12 @@ class BookReader {
             // Create EPUB book from array buffer
             this.epubBook = ePub(uint8Array.buffer);
 
-            // Create paginated rendition with mobile-friendly settings
-            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            // Create paginated rendition
             this.rendition = this.epubBook.renderTo("viewer", {
                 width: "100%",
                 height: "100%",
                 flow: "paginated",
-                spread: isMobile ? "none" : "auto",  // Single page on mobile, two pages on desktop
-                snap: true,  // Snap to page boundaries (prevents half-page issue)
-                allowScriptedContent: true
+                spread: "auto"  // Show two pages side by side
             });
 
             // Track location changes first
@@ -527,23 +524,8 @@ class BookReader {
                 return [];
             }
 
-            // Save current location before loading section (to restore after on mobile)
-            const savedCfi = this.rendition ? this.rendition.currentLocation()?.start.cfi : null;
-
-            // Load the section content ONLY if not already loaded
-            // This prevents potential re-rendering on mobile devices
-            if (!section.document) {
-                await section.load(this.epubBook.load.bind(this.epubBook));
-
-                // On mobile, section.load() may cause navigation - restore position
-                if (savedCfi && this.rendition) {
-                    const currentCfi = this.rendition.currentLocation()?.start.cfi;
-                    if (currentCfi !== savedCfi) {
-                        console.log('📍 Restoring position after section.load()');
-                        await this.rendition.display(savedCfi);
-                    }
-                }
-            }
+            // Load the section content
+            await section.load(this.epubBook.load.bind(this.epubBook));
             const sectionDoc = section.document;
 
             if (!sectionDoc || !sectionDoc.body) {
@@ -933,15 +915,13 @@ class BookReader {
                     const audioUrl = this.chunkAudioCache.get(chapterChunkIndex);
                     console.log(`🔊 Playing cached audio for chunk ${chapterChunkIndex}`);
 
-                    // CRITICAL: Reuse SAME Audio element for iOS Safari
-                    // Creating new Audio() breaks user interaction chain on mobile
-                    if (!this.currentAudio) {
-                        this.currentAudio = new Audio();
+                    // Stop current audio if playing
+                    if (this.currentAudio) {
+                        this.currentAudio.pause();
                     }
 
-                    // Just change the source and reload
-                    this.currentAudio.src = audioUrl;
-                    this.currentAudio.load();
+                    // Load chunk audio
+                    this.currentAudio = new Audio(audioUrl);
 
                     this.currentAudio.onerror = (error) => {
                         console.error('Chunk audio playback error:', error);
@@ -952,18 +932,11 @@ class BookReader {
                     // Set up ended handler to move to next chapter chunk
                     this.currentAudio.onended = () => {
                         if (this.isPlaying) {
-                            // CRITICAL: For mobile browsers, we must call play() SYNCHRONOUSLY
-                            // in the onended handler without any awaits/async in between
-                            this.playNextChapterChunkSync();
+                            this.nextChapterChunk();
                         }
                     };
 
-                    try {
-                        await this.currentAudio.play();
-                    } catch (error) {
-                        console.error('Playback error:', error.message);
-                        throw new Error(`Cannot play audio: ${error.message}`);
-                    }
+                    await this.currentAudio.play();
                     return;
                 }
             }
@@ -978,118 +951,6 @@ class BookReader {
         } finally {
             this.isLoadingAudio = false;
         }
-    }
-
-    playNextChapterChunkSync() {
-        /**
-         * CRITICAL: Synchronous method to play next chunk
-         * This is called from onended handler and MUST call play() synchronously
-         * to avoid mobile browser blocking
-         */
-        if (this.currentChapterChunkIndex < 0 || this.chapterChunks.length === 0) {
-            console.error('Invalid state for sync playback');
-            return;
-        }
-
-        // Move to next chunk
-        const nextChunkIndex = this.currentChapterChunkIndex + 1;
-
-        if (nextChunkIndex >= this.chapterChunks.length) {
-            console.log('Reached end of chapter chunks');
-            this.pause();
-            return;
-        }
-
-        // Check if we have audio URL cached for next chunk
-        if (!this.chunkAudioCache.has(nextChunkIndex)) {
-            console.log(`⚠️ No cached audio for chunk ${nextChunkIndex}, lazy loading...`);
-
-            // Lazy load the audio URL (this will be async, but happens in background)
-            ttsApi.getChunkAudio(this.book.backendId, this.currentChapterIndex, nextChunkIndex)
-                .then(result => {
-                    if (result && result.audioUrl) {
-                        console.log(`🔗 Lazy loaded audio URL for chunk ${nextChunkIndex}`);
-                        this.chunkAudioCache.set(nextChunkIndex, result.audioUrl);
-
-                        // If still playing, try to play this chunk now
-                        // Note: currentChapterChunkIndex is still pointing to previous chunk, so add 1
-                        if (this.isPlaying && this.currentChapterChunkIndex + 1 === nextChunkIndex) {
-                            this.playNextChapterChunkSync();
-                        }
-                    } else {
-                        console.log(`❌ Chunk ${nextChunkIndex} has no audio, stopping`);
-                        this.pause();
-                    }
-                })
-                .catch(error => {
-                    console.error(`Failed to load chunk ${nextChunkIndex}:`, error);
-                    this.pause();
-                });
-            return;
-        }
-
-        // Update index
-        this.currentChapterChunkIndex = nextChunkIndex;
-
-        // Get audio URL synchronously from cache
-        const audioUrl = this.chunkAudioCache.get(nextChunkIndex);
-        console.log(`🔊 Playing chunk ${nextChunkIndex} synchronously`);
-
-        // CRITICAL: Reuse SAME Audio element for iOS Safari
-        // Creating new Audio() breaks user interaction chain on mobile
-        if (!this.currentAudio) {
-            this.currentAudio = new Audio();
-        }
-
-        // Just change the source and reload
-        this.currentAudio.src = audioUrl;
-        this.currentAudio.load();
-
-        this.currentAudio.onerror = (error) => {
-            console.error('Chunk audio playback error:', error);
-            this.pause();
-        };
-
-        // Set up ended handler for next chunk (recursive)
-        this.currentAudio.onended = () => {
-            if (this.isPlaying) {
-                this.playNextChapterChunkSync();
-            }
-        };
-
-        // SYNCHRONOUS play() call - no await!
-        this.currentAudio.play().catch(error => {
-            console.error('Failed to play chunk:', error);
-            this.pause();
-        });
-
-        // Update paragraph index if chunk is on current page (async, but doesn't block audio)
-        this.updateParagraphIndexForChunk(nextChunkIndex);
-    }
-
-    async updateParagraphIndexForChunk(chunkIndex) {
-        /**
-         * Update paragraph index and highlighting for the given chunk
-         * This runs async after audio starts playing
-         * DO NOT turn pages here - that causes jumps on mobile
-         */
-        const chunkText = this.chapterChunks[chunkIndex];
-        const searchText = chunkText.substring(0, 100).replace(/\s+/g, ' ').trim();
-
-        // Find chunk on current page ONLY
-        for (let i = 0; i < this.currentParagraphs.length; i++) {
-            const para = this.currentParagraphs[i];
-            const paraText = (para.textContent || para).replace(/\s+/g, ' ').trim();
-
-            if (paraText.includes(searchText) || searchText.includes(paraText.substring(0, 100))) {
-                this.currentParagraphIndex = i;
-                this.highlightParagraph(i);
-                return;
-            }
-        }
-
-        // Chunk not on current page - just log it, DON'T turn page
-        console.log(`📄 Chunk ${chunkIndex} not visible on current page (will continue playing)`);
     }
 
     async nextChapterChunk() {
@@ -1196,7 +1057,7 @@ class BookReader {
     }
 
     async speakWithOnDemandTTS(text, isNewParagraph = true) {
-        // On-demand TTS with mobile-safe synchronous playback
+        // Original on-demand TTS logic
         // Reset chapter chunk tracking when using on-demand TTS
         this.currentChapterChunkIndex = -1;
 
@@ -1235,15 +1096,12 @@ class BookReader {
 
         this.currentAudio = ttsApi.createAudioElement(audioContent);
 
-        // CRITICAL: Use synchronous onended handler for mobile browser compatibility
         this.currentAudio.onended = () => {
             if (this.isPlaying) {
                 if (this.currentChunkIndex < this.currentChunks.length - 1) {
-                    // More chunks in current paragraph - play next chunk synchronously
                     this.currentChunkIndex++;
-                    this.playNextOnDemandChunkSync(text);
+                    this.speak(text, false);
                 } else {
-                    // Move to next paragraph asynchronously (not chained from audio)
                     this.nextParagraph();
                 }
             }
@@ -1255,78 +1113,7 @@ class BookReader {
             alert('Error playing audio. Please try again.');
         };
 
-        // Use .catch() pattern instead of await to maintain initial sync for first chunk
-        try {
-            await this.currentAudio.play();
-        } catch (error) {
-            console.error('Playback error:', error.message);
-            throw error;
-        }
-    }
-
-    playNextOnDemandChunkSync(text) {
-        /**
-         * CRITICAL: Synchronous method to play next on-demand TTS chunk
-         * This is called from onended handler and MUST call play() synchronously
-         * to avoid mobile browser blocking
-         */
-        if (this.currentChunkIndex < 0 || this.currentChunks.length === 0) {
-            console.error('Invalid state for on-demand sync playback');
-            return;
-        }
-
-        const chunk = this.currentChunks[this.currentChunkIndex];
-        const settings = storage.getSettings();
-        const voiceId = settings.voiceId || 'en-US-Standard-A';
-        const speed = settings.speed || 1.0;
-        const pitch = settings.pitch || 0;
-
-        const cacheKey = `${voiceId}-${speed}-${pitch}-${chunk.substring(0, 50)}`;
-
-        // Check if cached
-        if (!this.audioCache.has(cacheKey)) {
-            // Not cached - need to synthesize (this breaks sync chain, but unavoidable)
-            console.log(`⚠️ Chunk ${this.currentChunkIndex} not cached, need async synthesis`);
-            // Fall back to async speak
-            this.speak(text, false);
-            return;
-        }
-
-        // Get from cache synchronously
-        const audioContent = this.audioCache.get(cacheKey);
-
-        // Stop current audio
-        if (this.currentAudio) {
-            this.currentAudio.pause();
-        }
-
-        // Create and play new audio SYNCHRONOUSLY
-        this.currentAudio = ttsApi.createAudioElement(audioContent);
-
-        this.currentAudio.onerror = (error) => {
-            console.error('On-demand chunk playback error:', error);
-            this.pause();
-        };
-
-        // Set up ended handler for next chunk (recursive)
-        this.currentAudio.onended = () => {
-            if (this.isPlaying) {
-                if (this.currentChunkIndex < this.currentChunks.length - 1) {
-                    // More chunks - play next synchronously
-                    this.currentChunkIndex++;
-                    this.playNextOnDemandChunkSync(text);
-                } else {
-                    // Move to next paragraph
-                    this.nextParagraph();
-                }
-            }
-        };
-
-        // SYNCHRONOUS play() call - no await!
-        this.currentAudio.play().catch(error => {
-            console.error('Failed to play on-demand chunk:', error);
-            this.pause();
-        });
+        await this.currentAudio.play();
     }
 
     async checkForExistingChapterAudio(chapterIndex) {
@@ -1720,7 +1507,24 @@ class BookReader {
 
                         range.surroundContents(highlightSpan);
                         this.currentHighlightElement = highlightSpan;
-                        highlightSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                        // Check if element is in viewport before scrolling (prevents page jumps)
+                        const rect = highlightSpan.getBoundingClientRect();
+                        const iframeWindow = iframe.contentWindow;
+                        const isInViewport = rect.top >= 0 &&
+                                           rect.left >= 0 &&
+                                           rect.bottom <= iframeWindow.innerHeight &&
+                                           rect.right <= iframeWindow.innerWidth;
+
+                        // Only scroll if element is already on current page or just slightly out of view
+                        // This prevents jumping to previous pages where paragraph started
+                        if (!isInViewport && Math.abs(rect.top) < iframeWindow.innerHeight) {
+                            // Element is close but not in view, safe to scroll
+                            highlightSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        } else if (!isInViewport) {
+                            // Element is on a different page, don't scroll (prevents page jump)
+                            console.log('  ⚠️ Element on different page, skipping scroll to prevent navigation');
+                        }
 
                         console.log('  ✅ Precise highlighting successful');
                         return;
@@ -1814,8 +1618,22 @@ class BookReader {
                             range.surroundContents(highlightSpan);
                             this.currentHighlightElement = highlightSpan;
 
-                            // Scroll into view
-                            highlightSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            // Check if element is in viewport before scrolling (prevents page jumps)
+                            const rect = highlightSpan.getBoundingClientRect();
+                            const iframeWindow = highlightSpan.ownerDocument.defaultView;
+                            if (iframeWindow) {
+                                const isInViewport = rect.top >= 0 &&
+                                                   rect.left >= 0 &&
+                                                   rect.bottom <= iframeWindow.innerHeight &&
+                                                   rect.right <= iframeWindow.innerWidth;
+
+                                // Only scroll if element is close to viewport
+                                if (!isInViewport && Math.abs(rect.top) < iframeWindow.innerHeight) {
+                                    highlightSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                } else if (!isInViewport) {
+                                    console.log('  ⚠️ Element on different page, skipping scroll');
+                                }
+                            }
                             return true;
                         } catch (e) {
                             // surroundContents can fail if range spans multiple elements
@@ -1840,8 +1658,22 @@ class BookReader {
         el.style.transition = 'background-color 0.2s ease';
         this.currentHighlightElement = el;
 
-        // Scroll into view
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Check if element is in viewport before scrolling (prevents page jumps)
+        const rect = el.getBoundingClientRect();
+        const win = el.ownerDocument.defaultView;
+        if (win) {
+            const isInViewport = rect.top >= 0 &&
+                               rect.left >= 0 &&
+                               rect.bottom <= win.innerHeight &&
+                               rect.right <= win.innerWidth;
+
+            // Only scroll if element is close to viewport
+            if (!isInViewport && Math.abs(rect.top) < win.innerHeight) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } else if (!isInViewport) {
+                console.log('⚠️ Element on different page, skipping scroll to prevent navigation');
+            }
+        }
     }
 
     removeHighlight() {
@@ -1867,30 +1699,10 @@ class BookReader {
     }
 
     async saveReadingPosition() {
-        if (this.book.fileType === 'epub' && this.currentChapterIndex !== null) {
-            // Map current paragraph to chapter chunk (device-independent)
-            let chapterChunkIndex = -1;
-
-            if (this.currentParagraphs.length > 0 && this.chapterChunks.length > 0 && this.currentParagraphIndex >= 0) {
-                const paragraph = this.currentParagraphs[this.currentParagraphIndex];
-                const paragraphText = (paragraph.textContent || paragraph).replace(/\s+/g, ' ').trim();
-                const searchText = paragraphText.substring(0, 100);
-
-                for (let i = 0; i < this.chapterChunks.length; i++) {
-                    const normalizedChunk = this.chapterChunks[i].replace(/\s+/g, ' ').trim();
-                    if (normalizedChunk.includes(searchText) || searchText.includes(normalizedChunk.substring(0, 100))) {
-                        chapterChunkIndex = i;
-                        break;
-                    }
-                }
-            }
-
-            console.log(`💾 Saving position: chapter ${this.currentChapterIndex}, chunk ${chapterChunkIndex}`);
-
+        if (this.book.fileType === 'epub' && this.currentLocation) {
             await storage.saveReadingPosition(this.bookId, {
-                type: 'epub',
-                chapterIndex: this.currentChapterIndex,
-                chapterChunkIndex: chapterChunkIndex
+                cfi: this.currentLocation,
+                type: 'epub'
             });
         } else if (this.book.fileType === 'pdf') {
             await storage.saveReadingPosition(this.bookId, {
@@ -1977,84 +1789,10 @@ class BookReader {
             }
 
             // Load the position
-            if (position && position.type === 'epub' && position.chapterIndex !== undefined && this.rendition) {
+            if (position && position.type === 'epub' && position.cfi && this.rendition) {
                 try {
-                    // Navigate to saved chapter using device-independent chapter index
-                    const section = this.epubBook.spine.get(position.chapterIndex);
-                    if (!section) {
-                        console.error('❌ Invalid chapter index:', position.chapterIndex);
-                        return;
-                    }
-
-                    console.log(`📖 Loading chapter ${position.chapterIndex}, chunk ${position.chapterChunkIndex}...`);
-
-                    // Load chapter chunks first to know where to jump
-                    console.log(`📚 Loading chapter chunks for chapter ${position.chapterIndex}...`);
-                    this.chapterChunks = await this.loadChapterChunks(position.chapterIndex);
-                    this.currentChapterIndex = position.chapterIndex;
-
-                    // Find the saved chunk text
-                    if (position.chapterChunkIndex >= 0 && position.chapterChunkIndex < this.chapterChunks.length) {
-                        const targetChunkText = this.chapterChunks[position.chapterChunkIndex];
-                        const searchText = targetChunkText.substring(0, 100).replace(/\s+/g, ' ').trim();
-
-                        console.log(`🎯 Looking for chunk ${position.chapterChunkIndex}: "${searchText.substring(0, 50)}..."`);
-
-                        // Generate a CFI that points to this text within the chapter
-                        // We'll search for the text in the chapter document
-                        await section.load(this.epubBook.load.bind(this.epubBook));
-                        const sectionDoc = section.document;
-
-                        // Find the text in the chapter
-                        const walker = sectionDoc.createTreeWalker(sectionDoc.body, NodeFilter.SHOW_TEXT, null);
-                        let node;
-                        let found = false;
-
-                        while (node = walker.nextNode()) {
-                            const nodeText = node.textContent.replace(/\s+/g, ' ').trim();
-                            if (nodeText.includes(searchText) || searchText.includes(nodeText.substring(0, 100))) {
-                                // Found it! Generate CFI for this node's parent element
-                                const cfi = section.cfiFromElement(node.parentElement);
-                                console.log(`✅ Found chunk in chapter, jumping to CFI: ${cfi}`);
-
-                                // Jump directly to this CFI
-                                await this.rendition.display(cfi);
-                                found = true;
-                                break;
-                            }
-                        }
-
-                        if (!found) {
-                            console.log(`⚠️ Could not find chunk in chapter, jumping to chapter start`);
-                            await this.rendition.display(section.href);
-                        }
-
-                        // Wait for page to load
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        await this.textExtractionPromise;
-
-                        // Find and highlight the chunk on the current page
-                        for (let i = 0; i < this.currentParagraphs.length; i++) {
-                            const para = this.currentParagraphs[i];
-                            const paraText = (para.textContent || para).replace(/\s+/g, ' ').trim();
-
-                            if (paraText.includes(searchText) || searchText.includes(paraText.substring(0, 100))) {
-                                console.log(`✅ Highlighted chunk at paragraph ${i}`);
-                                this.currentParagraphIndex = i;
-                                this.highlightParagraph(i);
-                                break;
-                            }
-                        }
-                    } else {
-                        console.log(`ℹ️ No valid chunk index, starting from beginning of chapter`);
-                        await this.rendition.display(section.href);
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        await this.textExtractionPromise;
-                        this.currentParagraphIndex = 0;
-                        this.highlightParagraph(0);
-                    }
-
-                    console.log(`✅ Position loaded: Chapter ${position.chapterIndex}, Chunk ${position.chapterChunkIndex}, Paragraph ${this.currentParagraphIndex}`);
+                    await this.rendition.display(position.cfi);
+                    console.log('📖 Loaded EPUB position:', position.cfi);
                 } catch (error) {
                     console.error('Failed to load position:', error);
                 }
@@ -2065,9 +1803,7 @@ class BookReader {
             }
         } finally {
             // Clear flag to allow normal auto-saving
-            // This runs after the 500ms delay above, ensuring relocated event has finished
             this.isLoadingInitialPosition = false;
-            console.log('🟢 Initial position load complete - auto-save now enabled');
         }
     }
 

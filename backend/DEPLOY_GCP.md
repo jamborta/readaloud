@@ -163,17 +163,11 @@ curl -X POST https://YOUR_CLOUD_RUN_URL/api/register \
 After making changes:
 
 ```bash
-# Redeploy with one command (IMPORTANT: use .env.yaml!)
+# Redeploy with one command
 gcloud run deploy readaloud-backend \
   --source . \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --env-vars-file .env.yaml
+  --region us-central1
 ```
-
-**⚠️ IMPORTANT:** Always use `--env-vars-file .env.yaml` when deploying!
-
-If you deploy without it, your `SECRET_KEY` and `INVITATION_CODE` will be lost, causing login failures because password hashing uses the `SECRET_KEY` as salt. Users won't be able to login with existing passwords!
 
 ## Free Tier Limits
 
