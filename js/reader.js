@@ -156,10 +156,11 @@ class BookReader {
             }
         });
 
-        // Save position before leaving
-        window.addEventListener('beforeunload', () => {
-            this.saveReadingPosition();
-        });
+        // Note: Position is saved by:
+        // 1. Close button (explicit save before navigation)
+        // 2. Pause button (saves when audio stops)
+        // 3. Auto-save (debounced 3s after page navigation)
+        // No need for beforeunload - it can cause race conditions
     }
 
     async loadVoices() {
@@ -241,6 +242,11 @@ class BookReader {
             // Display the book at saved position or beginning
             if (savedPosition && savedPosition.type === 'epub' && savedPosition.cfi) {
                 console.log('📂 Opening book at saved position:', savedPosition.cfi);
+
+                // Store paragraph info for restoration BEFORE display triggers relocated event
+                this._savedParagraphText = savedPosition.paragraphText;
+                this._savedParagraphIndex = savedPosition.paragraphIndex;
+
                 await this.rendition.display(savedPosition.cfi);
             } else {
                 console.log('📂 Opening book at beginning...');
@@ -489,6 +495,43 @@ class BookReader {
 
                 // Check if first chunk has audio (lightweight check)
                 await this.checkForExistingChapterAudio(newChapterIndex);
+
+                // Restore saved paragraph position if this is initial load
+                if (this._savedParagraphText || this._savedParagraphIndex >= 0) {
+                    console.log('📍 Restoring paragraph position after text extraction...');
+
+                    if (this._savedParagraphText && this.currentParagraphs.length > 0) {
+                        // Try to find by text match
+                        const searchText = this._savedParagraphText.substring(0, 100);
+                        let found = false;
+                        for (let i = 0; i < this.currentParagraphs.length; i++) {
+                            const para = this.currentParagraphs[i];
+                            const paraText = (para.textContent || para).trim();
+                            if (paraText.includes(searchText) || paraText.startsWith(searchText.substring(0, 50))) {
+                                console.log(`✅ Found saved paragraph at index ${i}`);
+                                this.currentParagraphIndex = i;
+                                this.highlightParagraph(i);
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        if (!found && this._savedParagraphIndex >= 0 && this._savedParagraphIndex < this.currentParagraphs.length) {
+                            console.log(`⚠️ Text match failed, using index: ${this._savedParagraphIndex}`);
+                            this.currentParagraphIndex = this._savedParagraphIndex;
+                            this.highlightParagraph(this.currentParagraphIndex);
+                        }
+                    } else if (this._savedParagraphIndex >= 0 && this._savedParagraphIndex < this.currentParagraphs.length) {
+                        // Fall back to index
+                        console.log(`✅ Restoring paragraph by index: ${this._savedParagraphIndex}`);
+                        this.currentParagraphIndex = this._savedParagraphIndex;
+                        this.highlightParagraph(this.currentParagraphIndex);
+                    }
+
+                    // Clear the saved values so we don't restore again on page turn
+                    this._savedParagraphText = null;
+                    this._savedParagraphIndex = -1;
+                }
 
                 // Resolve the text extraction Promise
                 if (this.textExtractionResolver) {
@@ -1799,8 +1842,21 @@ class BookReader {
 
     async saveReadingPosition() {
         if (this.book.fileType === 'epub' && this.currentLocation) {
+            // Strategy: Save page start CFI (reliable) + paragraph text for precise restore
+            const currentLoc = this.rendition ? this.rendition.currentLocation() : null;
+            const pageStartCfi = currentLoc ? currentLoc.start.cfi : this.currentLocation;
+
+            // If we have a highlighted paragraph, save its text for precise restore
+            let paragraphText = null;
+            if (this.currentParagraphIndex >= 0 && this.currentParagraphs[this.currentParagraphIndex]) {
+                const paragraph = this.currentParagraphs[this.currentParagraphIndex];
+                paragraphText = (paragraph.textContent || paragraph).trim().substring(0, 200);
+            }
+
             await storage.saveReadingPosition(this.bookId, {
-                cfi: this.currentLocation,
+                cfi: pageStartCfi,
+                paragraphText: paragraphText,
+                paragraphIndex: this.currentParagraphIndex,
                 type: 'epub'
             });
         } else if (this.book.fileType === 'pdf') {
