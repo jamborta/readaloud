@@ -27,7 +27,6 @@ class BookReader {
         this.currentChapterChunkIndex = -1; // Which chapter chunk is currently playing
         this.textExtractionPromise = Promise.resolve(); // Resolves when text extraction completes
         this.textExtractionResolver = null; // Resolver for current extraction
-        this.isLoadingInitialPosition = false; // Prevent auto-save during initial load
     }
 
     async init() {
@@ -218,12 +217,11 @@ class BookReader {
 
                 // Debounce position saving - only save after 3 seconds of no page changes
                 // Don't save during active playback (will save when stopped)
-                // Don't save during initial position load (prevents overwriting saved position)
                 if (this.savePositionTimeout) {
                     clearTimeout(this.savePositionTimeout);
                 }
 
-                if (!this.isPlaying && !this.isLoadingInitialPosition) {
+                if (!this.isPlaying) {
                     this.savePositionTimeout = setTimeout(() => {
                         this.saveReadingPosition();
                     }, 3000);
@@ -236,14 +234,23 @@ class BookReader {
                 await this.extractCurrentPageText(location);
             });
 
-            // Display the book at beginning (will be overridden by loadReadingPosition if position exists)
-            console.log('📂 Opening book at beginning...');
-            const displayed = await this.rendition.display();
+            // Get initial position from localStorage and backend
+            console.log('🔍 Loading reading position...');
+            const savedPosition = await this.getInitialPosition();
+
+            // Display the book at saved position or beginning
+            if (savedPosition && savedPosition.type === 'epub' && savedPosition.cfi) {
+                console.log('📂 Opening book at saved position:', savedPosition.cfi);
+                await this.rendition.display(savedPosition.cfi);
+            } else {
+                console.log('📂 Opening book at beginning...');
+                await this.rendition.display();
+            }
 
             // Set initial location
             if (this.rendition.currentLocation()) {
                 this.currentLocation = this.rendition.currentLocation().start.cfi;
-                console.log('📍 Initial CFI:', this.currentLocation);
+                console.log('📍 Current CFI:', this.currentLocation);
             }
 
             // Apply theme
@@ -258,11 +265,6 @@ class BookReader {
             }).catch((error) => {
                 console.error('Failed to generate locations:', error);
             });
-
-            // Load saved position (will jump to saved position if it exists)
-            console.log('🔍 Loading saved reading position...');
-            await this.loadReadingPosition();
-            console.log('✅ Position load complete');
 
             // Load table of contents
             this.epubBook.loaded.navigation.then((navigation) => {
@@ -1698,6 +1700,103 @@ class BookReader {
         }
     }
 
+    async getInitialPosition() {
+        /**
+         * Get initial reading position, checking both local and backend
+         * If they differ, prompt user to choose which position to use
+         * Returns: position object or null
+         */
+
+        // Get local position
+        const localPosition = storage.getReadingPosition(this.bookId);
+        console.log('💾 Local position:', localPosition?.cfi || localPosition?.paragraphIndex || 'none');
+
+        // Get backend position if authenticated
+        let backendPosition = null;
+        if (this.book && this.book.backendId && ttsApi.isAuthenticated()) {
+            try {
+                backendPosition = await ttsApi.getPosition(this.book.backendId);
+                console.log('🌐 Backend position:', backendPosition?.cfi || backendPosition?.paragraphIndex || 'none');
+            } catch (error) {
+                console.error('Failed to fetch backend position:', error);
+            }
+        }
+
+        // If we only have one source, use it
+        if (!localPosition && !backendPosition) {
+            console.log('ℹ️ No saved position found');
+            return null;
+        }
+        if (localPosition && !backendPosition) {
+            console.log('✅ Using local position (no backend)');
+            return localPosition;
+        }
+        if (!localPosition && backendPosition) {
+            console.log('✅ Using backend position (no local)');
+            return backendPosition;
+        }
+
+        // Both exist - check if they're different
+        const localCfi = localPosition.cfi || '';
+        const backendCfi = backendPosition.cfi || '';
+        const localPara = localPosition.paragraphIndex || 0;
+        const backendPara = backendPosition.paragraphIndex || 0;
+
+        const areDifferent = (localPosition.type === 'epub' && localCfi !== backendCfi) ||
+                            (localPosition.type === 'pdf' && localPara !== backendPara);
+
+        if (!areDifferent) {
+            console.log('✅ Local and backend positions match');
+            return localPosition;
+        }
+
+        // Positions differ - prompt user to choose
+        console.log('⚠️ Local and backend positions differ');
+
+        const localTime = localPosition.lastRead ? new Date(localPosition.lastRead) : null;
+        const backendTime = backendPosition.lastRead ? new Date(backendPosition.lastRead) : null;
+
+        const localTimeStr = localTime ? localTime.toLocaleString() : 'Unknown';
+        const backendTimeStr = backendTime ? backendTime.toLocaleString() : 'Unknown';
+
+        const message = `This book has different reading positions:\n\n` +
+                       `📱 This device: Last read ${localTimeStr}\n` +
+                       `☁️ Cloud: Last read ${backendTimeStr}\n\n` +
+                       `Which position would you like to use?`;
+
+        const useBackend = confirm(message + '\n\nClick OK for Cloud position, Cancel for This device');
+
+        if (useBackend) {
+            console.log('✅ User chose backend position');
+            // Save backend position to localStorage to sync them
+            const positions = storage.getAllReadingPositions();
+            positions[this.bookId] = backendPosition;
+            localStorage.setItem('readingPositions', JSON.stringify(positions));
+            return backendPosition;
+        } else {
+            console.log('✅ User chose local position');
+            // Update backend with local position
+            if (this.book && this.book.backendId && ttsApi.isAuthenticated()) {
+                try {
+                    const positionData = {
+                        bookId: this.book.backendId,
+                        type: localPosition.type
+                    };
+                    if (localPosition.type === 'epub' && localPosition.cfi) {
+                        positionData.cfi = localPosition.cfi;
+                    } else if (localPosition.type === 'pdf') {
+                        positionData.paragraphIndex = localPosition.paragraphIndex;
+                        positionData.totalParagraphs = localPosition.totalParagraphs;
+                    }
+                    await ttsApi.savePosition(positionData);
+                } catch (error) {
+                    console.error('Failed to sync local position to backend:', error);
+                }
+            }
+            return localPosition;
+        }
+    }
+
     async saveReadingPosition() {
         if (this.book.fileType === 'epub' && this.currentLocation) {
             await storage.saveReadingPosition(this.bookId, {
@@ -1713,99 +1812,6 @@ class BookReader {
         }
     }
 
-    async loadReadingPosition() {
-        try {
-            // Set flag to prevent auto-saving during initial load
-            this.isLoadingInitialPosition = true;
-
-            // Clear any pending auto-save timeout from initial display()
-            if (this.savePositionTimeout) {
-                clearTimeout(this.savePositionTimeout);
-                this.savePositionTimeout = null;
-                console.log('🚫 Cleared pending auto-save to prevent overwriting saved position');
-            }
-
-            // Try to get position from backend first (if book is synced and user is authenticated)
-            let backendPosition = null;
-            if (this.book && this.book.backendId && ttsApi.isAuthenticated()) {
-                console.log('🌐 Fetching position from backend for book:', this.book.backendId);
-                try {
-                    backendPosition = await ttsApi.getPosition(this.book.backendId);
-                    if (backendPosition) {
-                        console.log('📥 Loaded position from backend:', JSON.stringify(backendPosition, null, 2));
-                    } else {
-                        console.log('ℹ️ No position found in backend');
-                    }
-                } catch (error) {
-                    console.error('❌ Failed to fetch position from backend:', error);
-                }
-            } else {
-                console.log('ℹ️ Skipping backend position fetch:', {
-                    hasBook: !!this.book,
-                    hasBackendId: !!this.book?.backendId,
-                    isAuthenticated: ttsApi.isAuthenticated()
-                });
-            }
-
-            // Get local position from localStorage
-            const localPosition = storage.getReadingPosition(this.bookId);
-            if (localPosition) {
-                console.log('💾 Local position found:', JSON.stringify(localPosition, null, 2));
-            } else {
-                console.log('ℹ️ No local position found');
-            }
-
-            // Choose the newer position (prefer backend if both exist)
-            let position = null;
-            if (backendPosition && localPosition) {
-                // Compare timestamps (backend should have lastRead timestamp)
-                const backendTime = backendPosition.lastRead ? new Date(backendPosition.lastRead).getTime() : 0;
-                const localTime = localPosition.lastRead ? new Date(localPosition.lastRead).getTime() : 0;
-
-                if (backendTime >= localTime) {
-                    console.log('✅ Using backend position (newer)');
-                    position = backendPosition;
-                    // Save to localStorage to keep them in sync (without syncing back to backend)
-                    const positions = storage.getAllReadingPositions();
-                    positions[this.bookId] = position;
-                    localStorage.setItem('readingPositions', JSON.stringify(positions));
-                } else {
-                    console.log('✅ Using local position (newer)');
-                    position = localPosition;
-                }
-            } else if (backendPosition) {
-                console.log('✅ Using backend position (no local)');
-                position = backendPosition;
-                // Save to localStorage (without syncing back to backend)
-                const positions = storage.getAllReadingPositions();
-                positions[this.bookId] = position;
-                localStorage.setItem('readingPositions', JSON.stringify(positions));
-            } else if (localPosition) {
-                console.log('✅ Using local position (no backend)');
-                position = localPosition;
-            } else {
-                console.log('ℹ️ No saved position found');
-                return;
-            }
-
-            // Load the position
-            if (position && position.type === 'epub' && position.cfi && this.rendition) {
-                try {
-                    await this.rendition.display(position.cfi);
-                    console.log('📖 Loaded EPUB position:', position.cfi);
-                } catch (error) {
-                    console.error('Failed to load position:', error);
-                }
-            } else if (position && position.type === 'pdf' && position.paragraphIndex !== undefined) {
-                this.currentParagraphIndex = Math.min(position.paragraphIndex, this.currentParagraphs.length - 1);
-                this.highlightParagraph(this.currentParagraphIndex);
-                console.log('📖 Loaded PDF position:', position.paragraphIndex);
-            }
-        } finally {
-            // Clear flag to allow normal auto-saving
-            this.isLoadingInitialPosition = false;
-        }
-    }
 
     cycleFontSize() {
         const sizes = ['small', 'medium', 'large', 'x-large'];
