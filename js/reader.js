@@ -9,6 +9,7 @@ class BookReader {
         this.currentParagraphIndex = 0;
         this.isPlaying = false;
         this.currentAudio = null;
+        this.nextAudio = null; // Prefetched next chunk for gapless playback
         this.voices = [];
         this.audioCache = new Map();
         this.isLoadingAudio = false;
@@ -1130,13 +1131,13 @@ class BookReader {
     }
 
     async speakWithOnDemandTTS(text, isNewParagraph = true) {
-        // Original on-demand TTS logic
         // Reset chapter chunk tracking when using on-demand TTS
         this.currentChapterChunkIndex = -1;
 
         if (isNewParagraph) {
             this.currentChunks = this.splitTextIntoChunks(text);
             this.currentChunkIndex = 0;
+            this.nextAudio = null; // Clear prefetched audio for new paragraph
         }
 
         const chunk = this.currentChunks[this.currentChunkIndex];
@@ -1147,27 +1148,72 @@ class BookReader {
 
         const cacheKey = `${voiceId}-${speed}-${pitch}-${chunk.substring(0, 50)}`;
 
+        // Use prefetched audio if available (gapless playback!)
         let audioContent;
-        if (this.audioCache.has(cacheKey)) {
-            audioContent = this.audioCache.get(cacheKey);
-        } else {
-            const result = await ttsApi.synthesize(chunk, voiceId, speed, pitch);
-            audioContent = result.audioContent;
-
-            this.trackUsage(result.characterCount);
-
-            if (this.audioCache.size > 20) {
-                const firstKey = this.audioCache.keys().next().value;
-                this.audioCache.delete(firstKey);
+        if (this.nextAudio) {
+            console.log('🎵 Using prefetched audio for gapless playback');
+            if (this.currentAudio) {
+                this.currentAudio.pause();
             }
-            this.audioCache.set(cacheKey, audioContent);
+            this.currentAudio = this.nextAudio;
+            this.nextAudio = null;
+        } else {
+            // Fetch current chunk audio
+            if (this.audioCache.has(cacheKey)) {
+                audioContent = this.audioCache.get(cacheKey);
+            } else {
+                const result = await ttsApi.synthesize(chunk, voiceId, speed, pitch);
+                audioContent = result.audioContent;
+
+                this.trackUsage(result.characterCount);
+
+                if (this.audioCache.size > 20) {
+                    const firstKey = this.audioCache.keys().next().value;
+                    this.audioCache.delete(firstKey);
+                }
+                this.audioCache.set(cacheKey, audioContent);
+            }
+
+            if (this.currentAudio) {
+                this.currentAudio.pause();
+            }
+
+            this.currentAudio = ttsApi.createAudioElement(audioContent);
         }
 
-        if (this.currentAudio) {
-            this.currentAudio.pause();
-        }
+        // Prefetch next chunk while current plays (for gapless playback!)
+        if (this.currentChunkIndex < this.currentChunks.length - 1) {
+            const nextChunk = this.currentChunks[this.currentChunkIndex + 1];
+            const nextCacheKey = `${voiceId}-${speed}-${pitch}-${nextChunk.substring(0, 50)}`;
 
-        this.currentAudio = ttsApi.createAudioElement(audioContent);
+            // Prefetch asynchronously (don't wait)
+            (async () => {
+                try {
+                    let nextAudioContent;
+                    if (this.audioCache.has(nextCacheKey)) {
+                        nextAudioContent = this.audioCache.get(nextCacheKey);
+                    } else {
+                        const result = await ttsApi.synthesize(nextChunk, voiceId, speed, pitch);
+                        nextAudioContent = result.audioContent;
+                        this.trackUsage(result.characterCount);
+
+                        if (this.audioCache.size > 20) {
+                            const firstKey = this.audioCache.keys().next().value;
+                            this.audioCache.delete(firstKey);
+                        }
+                        this.audioCache.set(nextCacheKey, nextAudioContent);
+                    }
+
+                    // Create audio element and preload it
+                    this.nextAudio = ttsApi.createAudioElement(nextAudioContent);
+                    this.nextAudio.load(); // Preload for instant playback
+                    console.log('✅ Prefetched next chunk for gapless playback');
+                } catch (error) {
+                    console.error('Failed to prefetch next chunk:', error);
+                    this.nextAudio = null;
+                }
+            })();
+        }
 
         this.currentAudio.onended = () => {
             if (this.isPlaying) {
