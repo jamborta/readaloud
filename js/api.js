@@ -504,6 +504,39 @@ class TTSApiClient {
     }
 
     /**
+     * Send log to backend for debugging
+     * @param {string} level - 'info', 'warn', or 'error'
+     * @param {string} message - Log message
+     * @param {object} context - Additional context (optional)
+     */
+    async sendLog(level, message, context = null) {
+        // Don't let logging errors disrupt the app
+        try {
+            if (!this.isOnline || !this.isAuthenticated()) {
+                return;
+            }
+
+            const logData = {
+                level,
+                message,
+                context,
+                timestamp: new Date().toISOString()
+            };
+
+            // Fire and forget - don't await or handle errors
+            fetch(`${this.apiUrl}/api/logs`, {
+                method: 'POST',
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify(logData)
+            }).catch(() => {
+                // Silently fail
+            });
+        } catch {
+            // Silently fail
+        }
+    }
+
+    /**
      * Check if API URL is configured
      */
     isConfigured() {

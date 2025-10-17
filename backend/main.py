@@ -172,6 +172,14 @@ class ChunkAudioResponse(BaseModel):
     generatedAt: str
 
 
+class LogEntry(BaseModel):
+    """Frontend log entry"""
+    level: str  # 'info', 'warn', 'error'
+    message: str
+    context: Optional[dict] = None
+    timestamp: Optional[str] = None
+
+
 # Helper functions
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     computed_hash = get_password_hash(plain_password)
@@ -706,6 +714,42 @@ async def get_chunk_audio(book_id: str, chapter_index: int, chunk_id: int, usern
         "audioUrl": audio_url,
         "chunkId": chunk_id
     }
+
+
+@app.post("/api/logs")
+async def collect_logs(log: LogEntry, username: str = Depends(verify_token)):
+    """Collect frontend logs for debugging"""
+    if not db:
+        # Still accept logs even if DB is unavailable, just print them
+        print(f"[FE LOG - {log.level.upper()}] {username}: {log.message}")
+        if log.context:
+            print(f"  Context: {log.context}")
+        return {"status": "logged to console"}
+
+    try:
+        # Store log in Firestore
+        log_data = {
+            "username": username,
+            "level": log.level,
+            "message": log.message,
+            "context": log.context or {},
+            "timestamp": log.timestamp or datetime.now().isoformat(),
+            "received_at": datetime.now().isoformat()
+        }
+
+        # Add to logs collection
+        db.collection('frontend_logs').add(log_data)
+
+        # Also print to console for immediate visibility
+        print(f"[FE LOG - {log.level.upper()}] {username}: {log.message}")
+        if log.context:
+            print(f"  Context: {log.context}")
+
+        return {"status": "logged"}
+
+    except Exception as e:
+        print(f"Failed to store log: {e}")
+        return {"status": "error", "error": str(e)}
 
 
 if __name__ == "__main__":

@@ -239,6 +239,15 @@ class BookReader {
             console.log('🔍 Loading reading position...');
             const savedPosition = await this.getInitialPosition();
 
+            // Log to backend for mobile debugging
+            ttsApi.sendLog('info', 'Loading reading position', {
+                hasSavedPosition: !!savedPosition,
+                positionType: savedPosition?.type,
+                cfi: savedPosition?.cfi,
+                paragraphIndex: savedPosition?.paragraphIndex,
+                paragraphText: savedPosition?.paragraphText?.substring(0, 50)
+            });
+
             // Display the book at saved position or beginning
             if (savedPosition && savedPosition.type === 'epub' && savedPosition.cfi) {
                 console.log('📂 Opening book at saved position:', savedPosition.cfi);
@@ -500,6 +509,9 @@ class BookReader {
                 if (this._savedParagraphText || this._savedParagraphIndex >= 0) {
                     console.log('📍 Restoring paragraph position after text extraction...');
 
+                    let restored = false;
+                    let restoreMethod = 'none';
+
                     if (this._savedParagraphText && this.currentParagraphs.length > 0) {
                         // Try to find by text match
                         const searchText = this._savedParagraphText.substring(0, 100);
@@ -512,6 +524,8 @@ class BookReader {
                                 this.currentParagraphIndex = i;
                                 this.highlightParagraph(i);
                                 found = true;
+                                restored = true;
+                                restoreMethod = 'text-match';
                                 break;
                             }
                         }
@@ -520,13 +534,27 @@ class BookReader {
                             console.log(`⚠️ Text match failed, using index: ${this._savedParagraphIndex}`);
                             this.currentParagraphIndex = this._savedParagraphIndex;
                             this.highlightParagraph(this.currentParagraphIndex);
+                            restored = true;
+                            restoreMethod = 'index-fallback';
                         }
                     } else if (this._savedParagraphIndex >= 0 && this._savedParagraphIndex < this.currentParagraphs.length) {
                         // Fall back to index
                         console.log(`✅ Restoring paragraph by index: ${this._savedParagraphIndex}`);
                         this.currentParagraphIndex = this._savedParagraphIndex;
                         this.highlightParagraph(this.currentParagraphIndex);
+                        restored = true;
+                        restoreMethod = 'index-only';
                     }
+
+                    // Log restore result
+                    ttsApi.sendLog('info', 'Paragraph position restored', {
+                        restored,
+                        restoreMethod,
+                        savedParagraphIndex: this._savedParagraphIndex,
+                        restoredParagraphIndex: this.currentParagraphIndex,
+                        totalParagraphs: this.currentParagraphs.length,
+                        hadParagraphText: !!this._savedParagraphText
+                    });
 
                     // Clear the saved values so we don't restore again on page turn
                     this._savedParagraphText = null;
@@ -1852,6 +1880,15 @@ class BookReader {
                 const paragraph = this.currentParagraphs[this.currentParagraphIndex];
                 paragraphText = (paragraph.textContent || paragraph).trim().substring(0, 200);
             }
+
+            // Log to backend for debugging
+            ttsApi.sendLog('info', 'Saving reading position', {
+                cfi: pageStartCfi,
+                paragraphIndex: this.currentParagraphIndex,
+                hasParagraphText: !!paragraphText,
+                paragraphTextPreview: paragraphText?.substring(0, 50),
+                totalParagraphs: this.currentParagraphs.length
+            });
 
             await storage.saveReadingPosition(this.bookId, {
                 cfi: pageStartCfi,

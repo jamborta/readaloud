@@ -113,10 +113,12 @@ app.add_middleware(
 
 ### 6. Deploy
 
+⚠️ **CRITICAL: You MUST include `--env-vars-file .env.yaml` or the backend will not have SECRET_KEY and INVITATION_CODE!**
+
 ```bash
 cd backend
 
-# Deploy to Cloud Run
+# Deploy to Cloud Run - DO NOT SKIP ANY FLAGS
 gcloud run deploy readaloud-backend \
   --source . \
   --region us-central1 \
@@ -126,6 +128,13 @@ gcloud run deploy readaloud-backend \
 
 # If using Option B (credentials file), remove the --service-account flag
 ```
+
+**What each flag does:**
+- `--source .` - Build from current directory
+- `--region us-central1` - Deploy to US Central region
+- `--allow-unauthenticated` - Allow public access (required for frontend)
+- **`--env-vars-file .env.yaml`** - ⚠️ **REQUIRED** - Loads SECRET_KEY and INVITATION_CODE
+- `--service-account` - Use service account for Google Cloud permissions
 
 **The deployment will:**
 1. Build a container from your Dockerfile
