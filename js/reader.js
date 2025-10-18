@@ -1,3 +1,482 @@
+// Robust Audio Playback Manager for Mobile
+class AudioPlaybackManager {
+    constructor(ttsApi) {
+        this.ttsApi = ttsApi;
+
+        // States: IDLE, LOADING, PLAYING, PAUSED, RETRYING, SUSPENDED
+        this.state = 'IDLE';
+
+        // Single audio element for entire session
+        this.audioElement = new Audio();
+        this.audioElement.preload = 'auto';
+
+        // Playback state
+        this.currentChunks = [];
+        this.currentChunkIndex = 0;
+        this.currentParagraphText = null;
+        this.isNewParagraph = true;
+
+        // Prefetch buffer - keep 2-3 chunks ahead as Blob URLs
+        this.prefetchBuffer = new Map(); // chunkIndex -> {blobUrl, audioContent}
+        this.maxPrefetchAhead = 2;
+
+        // Retry state
+        this.retryCount = 0;
+        this.maxRetries = 3;
+        this.retryDelays = [1000, 2000, 4000]; // exponential backoff
+
+        // Blob URL cleanup
+        this.activeBlobUrls = new Set();
+
+        // Visibility handling
+        this.wasPlayingBeforeSuspend = false;
+        this.suspendedAt = null;
+
+        // Callbacks
+        this.onChunkComplete = null;
+        this.onParagraphComplete = null;
+        this.onError = null;
+        this.onStateChange = null;
+
+        // Setup permanent event listeners
+        this.setupAudioListeners();
+        this.setupVisibilityHandlers();
+    }
+
+    setupAudioListeners() {
+        // Permanent listeners that never get removed
+        this.audioElement.addEventListener('ended', () => this.handleAudioEnded());
+        this.audioElement.addEventListener('error', (e) => this.handleAudioError(e));
+        this.audioElement.addEventListener('canplaythrough', () => this.handleCanPlayThrough());
+        this.audioElement.addEventListener('waiting', () => this.handleWaiting());
+        this.audioElement.addEventListener('playing', () => this.handlePlaying());
+        this.audioElement.addEventListener('pause', () => this.handlePause());
+
+        console.log('✅ Audio event listeners set up');
+    }
+
+    setupVisibilityHandlers() {
+        // Handle page visibility changes (screen lock, tab switch, backgrounding)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.handlePageHidden();
+            } else {
+                this.handlePageVisible();
+            }
+        });
+
+        // iOS Safari specific handlers
+        window.addEventListener('pagehide', () => this.handlePageHidden());
+        window.addEventListener('pageshow', () => this.handlePageVisible());
+
+        console.log('✅ Visibility handlers set up');
+    }
+
+    handlePageHidden() {
+        console.log('📱 Page hidden (screen lock / background)');
+
+        if (this.state === 'PLAYING') {
+            this.wasPlayingBeforeSuspend = true;
+            this.suspendedAt = Date.now();
+            this.setState('SUSPENDED');
+
+            // Save current playback position
+            this.ttsApi.sendLog('info', 'Page hidden during playback', {
+                chunkIndex: this.currentChunkIndex,
+                totalChunks: this.currentChunks.length,
+                audioTime: this.audioElement.currentTime
+            });
+        }
+    }
+
+    handlePageVisible() {
+        console.log('📱 Page visible (screen unlock / foreground)');
+
+        if (this.state === 'SUSPENDED' && this.wasPlayingBeforeSuspend) {
+            const suspendDuration = Date.now() - this.suspendedAt;
+            console.log(`🔄 Resuming after ${Math.round(suspendDuration / 1000)}s suspend`);
+
+            this.ttsApi.sendLog('info', 'Resuming playback after suspend', {
+                suspendDuration,
+                chunkIndex: this.currentChunkIndex
+            });
+
+            // Try to resume playback
+            this.setState('PLAYING');
+            this.resumePlayback();
+        }
+    }
+
+    async resumePlayback() {
+        try {
+            // If audio element is ready, just play
+            if (this.audioElement.src && this.audioElement.readyState >= 2) {
+                await this.audioElement.play();
+                console.log('✅ Resumed playback');
+            } else {
+                // Reload current chunk
+                console.log('⚠️ Audio not ready, reloading chunk');
+                await this.playChunk(this.currentChunkIndex);
+            }
+        } catch (error) {
+            console.error('Failed to resume playback:', error);
+            this.retryCurrentChunk();
+        }
+    }
+
+    setState(newState) {
+        if (this.state !== newState) {
+            console.log(`State: ${this.state} → ${newState}`);
+            this.state = newState;
+            if (this.onStateChange) {
+                this.onStateChange(newState);
+            }
+        }
+    }
+
+    handleAudioEnded() {
+        console.log(`✅ Chunk ${this.currentChunkIndex} ended`);
+
+        if (this.state !== 'PLAYING') return;
+
+        // Move to next chunk
+        if (this.currentChunkIndex < this.currentChunks.length - 1) {
+            this.currentChunkIndex++;
+            this.playChunk(this.currentChunkIndex);
+
+            if (this.onChunkComplete) {
+                this.onChunkComplete(this.currentChunkIndex - 1);
+            }
+        } else {
+            // Paragraph complete
+            console.log('✅ Paragraph complete');
+            this.setState('IDLE');
+            if (this.onParagraphComplete) {
+                this.onParagraphComplete();
+            }
+        }
+    }
+
+    handleAudioError(event) {
+        console.error('🚨 Audio error:', event);
+
+        const error = this.audioElement.error;
+        const errorDetails = {
+            code: error?.code,
+            message: error?.message,
+            chunkIndex: this.currentChunkIndex,
+            state: this.state,
+            src: this.audioElement.src?.substring(0, 50)
+        };
+
+        this.ttsApi.sendLog('error', 'Audio playback error', errorDetails);
+
+        // Try to recover
+        this.retryCurrentChunk();
+    }
+
+    handleCanPlayThrough() {
+        console.log(`✅ Chunk ${this.currentChunkIndex} ready to play`);
+    }
+
+    handleWaiting() {
+        console.log(`⏳ Buffering chunk ${this.currentChunkIndex}...`);
+    }
+
+    handlePlaying() {
+        if (this.state !== 'PLAYING') {
+            this.setState('PLAYING');
+        }
+    }
+
+    handlePause() {
+        if (this.state === 'PLAYING') {
+            console.log('⏸ Audio paused');
+        }
+    }
+
+    async retryCurrentChunk() {
+        if (this.retryCount >= this.maxRetries) {
+            console.error(`❌ Max retries (${this.maxRetries}) exceeded for chunk ${this.currentChunkIndex}`);
+
+            this.ttsApi.sendLog('error', 'Max retries exceeded, skipping chunk', {
+                chunkIndex: this.currentChunkIndex,
+                chunk: this.currentChunks[this.currentChunkIndex]?.substring(0, 100)
+            });
+
+            // Skip to next chunk instead of stopping
+            if (this.currentChunkIndex < this.currentChunks.length - 1) {
+                console.log('⏭ Skipping to next chunk');
+                this.retryCount = 0;
+                this.currentChunkIndex++;
+                await this.playChunk(this.currentChunkIndex);
+            } else {
+                // End of paragraph, can't skip
+                this.setState('IDLE');
+                if (this.onError) {
+                    this.onError(new Error('Failed to play final chunk after retries'));
+                }
+            }
+            return;
+        }
+
+        this.retryCount++;
+        const delay = this.retryDelays[this.retryCount - 1] || 4000;
+
+        console.log(`🔄 Retry ${this.retryCount}/${this.maxRetries} for chunk ${this.currentChunkIndex} in ${delay}ms`);
+        this.setState('RETRYING');
+
+        this.ttsApi.sendLog('warn', 'Retrying chunk after error', {
+            chunkIndex: this.currentChunkIndex,
+            retryCount: this.retryCount,
+            delay
+        });
+
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+        if (this.state === 'RETRYING') {
+            await this.playChunk(this.currentChunkIndex);
+        }
+    }
+
+    async speak(text, isNewParagraph = true) {
+        console.log(`🎙 speak() called, isNewParagraph=${isNewParagraph}`);
+
+        if (isNewParagraph) {
+            this.currentChunks = this.splitTextIntoChunks(text);
+            this.currentChunkIndex = 0;
+            this.currentParagraphText = text;
+            this.isNewParagraph = true;
+            this.retryCount = 0;
+
+            // Clear old prefetch buffer
+            this.clearPrefetchBuffer();
+
+            console.log(`📝 New paragraph: ${this.currentChunks.length} chunks`);
+        }
+
+        this.setState('LOADING');
+        await this.playChunk(this.currentChunkIndex);
+    }
+
+    async playChunk(chunkIndex) {
+        if (chunkIndex >= this.currentChunks.length) {
+            console.error(`Invalid chunk index: ${chunkIndex}/${this.currentChunks.length}`);
+            return;
+        }
+
+        const chunk = this.currentChunks[chunkIndex];
+        const settings = storage.getSettings();
+        const voiceId = settings.voiceId || 'en-US-Standard-A';
+        const speed = settings.speed || 1.0;
+        const pitch = settings.pitch || 0;
+
+        console.log(`🎵 Playing chunk ${chunkIndex}/${this.currentChunks.length - 1}`);
+
+        try {
+            // Check if we have it prefetched
+            let blobUrl;
+            if (this.prefetchBuffer.has(chunkIndex)) {
+                console.log(`✅ Using prefetched chunk ${chunkIndex}`);
+                blobUrl = this.prefetchBuffer.get(chunkIndex).blobUrl;
+            } else {
+                // Fetch and create blob URL
+                console.log(`⬇️ Fetching chunk ${chunkIndex}...`);
+                const result = await this.ttsApi.synthesize(chunk, voiceId, speed, pitch);
+                blobUrl = this.createBlobUrl(result.audioContent);
+
+                // Track usage (important for billing/quotas)
+                if (this.onUsageTracked && result.characterCount) {
+                    this.onUsageTracked(result.characterCount);
+                }
+            }
+
+            // Set audio source
+            this.audioElement.src = blobUrl;
+            this.audioElement.load();
+
+            // Start playback
+            await this.audioElement.play();
+            this.setState('PLAYING');
+            this.retryCount = 0; // Reset on successful play
+
+            // Start prefetching next chunks
+            this.prefetchNextChunks(chunkIndex);
+
+        } catch (error) {
+            console.error(`Failed to play chunk ${chunkIndex}:`, error);
+            this.ttsApi.sendLog('error', 'Failed to play chunk', {
+                chunkIndex,
+                error: error.message
+            });
+            this.retryCurrentChunk();
+        }
+    }
+
+    async prefetchNextChunks(currentIndex) {
+        // Prefetch next 2-3 chunks
+        const settings = storage.getSettings();
+        const voiceId = settings.voiceId || 'en-US-Standard-A';
+        const speed = settings.speed || 1.0;
+        const pitch = settings.pitch || 0;
+
+        for (let i = 1; i <= this.maxPrefetchAhead; i++) {
+            const prefetchIndex = currentIndex + i;
+
+            if (prefetchIndex >= this.currentChunks.length) break;
+            if (this.prefetchBuffer.has(prefetchIndex)) continue;
+
+            // Prefetch asynchronously (don't await)
+            (async () => {
+                try {
+                    const chunk = this.currentChunks[prefetchIndex];
+                    console.log(`⬇️ Prefetching chunk ${prefetchIndex}...`);
+
+                    const result = await this.ttsApi.synthesize(chunk, voiceId, speed, pitch);
+                    const blobUrl = this.createBlobUrl(result.audioContent);
+
+                    // Track usage for prefetched chunks too
+                    if (this.onUsageTracked && result.characterCount) {
+                        this.onUsageTracked(result.characterCount);
+                    }
+
+                    this.prefetchBuffer.set(prefetchIndex, {
+                        blobUrl,
+                        audioContent: result.audioContent
+                    });
+
+                    console.log(`✅ Prefetched chunk ${prefetchIndex}`);
+                } catch (error) {
+                    console.error(`Failed to prefetch chunk ${prefetchIndex}:`, error);
+                }
+            })();
+        }
+    }
+
+    createBlobUrl(base64Audio) {
+        // Convert base64 to Blob URL (better memory management than data URLs)
+        const binaryString = atob(base64Audio);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: 'audio/mp3' });
+        const blobUrl = URL.createObjectURL(blob);
+
+        this.activeBlobUrls.add(blobUrl);
+        return blobUrl;
+    }
+
+    clearPrefetchBuffer() {
+        // Revoke all Blob URLs to free memory
+        for (const [index, data] of this.prefetchBuffer.entries()) {
+            if (data.blobUrl) {
+                URL.revokeObjectURL(data.blobUrl);
+                this.activeBlobUrls.delete(data.blobUrl);
+            }
+        }
+        this.prefetchBuffer.clear();
+        console.log('🧹 Prefetch buffer cleared');
+    }
+
+    pause() {
+        console.log('⏸ Pausing playback');
+        this.audioElement.pause();
+        this.setState('PAUSED');
+        this.wasPlayingBeforeSuspend = false;
+    }
+
+    resume() {
+        console.log('▶ Resuming playback');
+        if (this.state === 'PAUSED') {
+            this.audioElement.play().catch(error => {
+                console.error('Failed to resume:', error);
+                this.retryCurrentChunk();
+            });
+        }
+    }
+
+    stop() {
+        console.log('⏹ Stopping playback');
+        this.audioElement.pause();
+        this.audioElement.src = '';
+        this.setState('IDLE');
+        this.clearPrefetchBuffer();
+        this.currentChunks = [];
+        this.currentChunkIndex = 0;
+        this.retryCount = 0;
+        this.wasPlayingBeforeSuspend = false;
+    }
+
+    splitTextIntoChunks(text, maxChunkSize = 4500) {
+        if (text.length <= maxChunkSize) {
+            return [text];
+        }
+
+        const chunks = [];
+        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+        let currentChunk = '';
+
+        for (const sentence of sentences) {
+            const trimmedSentence = sentence.trim();
+
+            if (trimmedSentence.length > maxChunkSize) {
+                if (currentChunk) {
+                    chunks.push(currentChunk.trim());
+                    currentChunk = '';
+                }
+
+                const words = trimmedSentence.split(' ');
+                let wordChunk = '';
+
+                for (const word of words) {
+                    if ((wordChunk + ' ' + word).length > maxChunkSize) {
+                        if (wordChunk) {
+                            chunks.push(wordChunk.trim());
+                        }
+                        wordChunk = word;
+                    } else {
+                        wordChunk += (wordChunk ? ' ' : '') + word;
+                    }
+                }
+
+                if (wordChunk) {
+                    chunks.push(wordChunk.trim());
+                }
+                continue;
+            }
+
+            if ((currentChunk + ' ' + trimmedSentence).length > maxChunkSize) {
+                if (currentChunk) {
+                    chunks.push(currentChunk.trim());
+                }
+                currentChunk = trimmedSentence;
+            } else {
+                currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
+            }
+        }
+
+        if (currentChunk) {
+            chunks.push(currentChunk.trim());
+        }
+
+        return chunks.filter(chunk => chunk.length > 0);
+    }
+
+    cleanup() {
+        // Clean up all resources
+        this.stop();
+
+        // Revoke all Blob URLs
+        for (const blobUrl of this.activeBlobUrls) {
+            URL.revokeObjectURL(blobUrl);
+        }
+        this.activeBlobUrls.clear();
+
+        console.log('🧹 AudioPlaybackManager cleaned up');
+    }
+}
+
 // Reader with EPUB.js Paginated Rendering and Google Cloud TTS
 class BookReader {
     constructor() {
@@ -8,13 +487,9 @@ class BookReader {
         this.currentParagraphs = [];
         this.currentParagraphIndex = 0;
         this.isPlaying = false;
-        this.currentAudio = null;
-        this.nextAudio = null; // Prefetched next chunk for gapless playback
         this.voices = [];
         this.audioCache = new Map();
         this.isLoadingAudio = false;
-        this.currentChunks = [];
-        this.currentChunkIndex = 0;
         this.currentLocation = null;
         this.currentHighlightElement = null;
         this.savePositionTimeout = null;
@@ -28,6 +503,32 @@ class BookReader {
         this.currentChapterChunkIndex = -1; // Which chapter chunk is currently playing
         this.textExtractionPromise = Promise.resolve(); // Resolves when text extraction completes
         this.textExtractionResolver = null; // Resolver for current extraction
+
+        // Initialize robust audio playback manager
+        this.audioManager = new AudioPlaybackManager(ttsApi);
+
+        // Set up callbacks
+        this.audioManager.onParagraphComplete = () => this.nextParagraph();
+        this.audioManager.onError = (error) => {
+            console.error('AudioManager error:', error);
+            this.isPlaying = false;
+            this.updatePlayPauseButton();
+        };
+        this.audioManager.onStateChange = (state) => {
+            console.log(`📢 Audio state: ${state}`);
+            this.isPlaying = (state === 'PLAYING' || state === 'LOADING' || state === 'RETRYING');
+            this.updatePlayPauseButton();
+        };
+        this.audioManager.onUsageTracked = (characterCount) => {
+            this.trackUsage(characterCount);
+        };
+    }
+
+    updatePlayPauseButton() {
+        const playPauseBtn = document.getElementById('play-pause');
+        if (playPauseBtn) {
+            playPauseBtn.textContent = this.isPlaying ? '⏸' : '▶';
+        }
     }
 
     async init() {
@@ -857,76 +1358,16 @@ class BookReader {
     }
 
     pause() {
+        // Use robust audio manager
+        this.audioManager.pause();
         this.isPlaying = false;
-        const playPauseBtn = document.getElementById('play-pause');
-        if (playPauseBtn) {
-            playPauseBtn.textContent = '▶';
-        }
-
-        if (this.currentAudio) {
-            this.currentAudio.pause();
-            this.currentAudio = null;
-        }
-
-        this.currentChunks = [];
-        this.currentChunkIndex = 0;
         this.currentChapterChunkIndex = -1; // Reset chapter chunk tracking
 
         // Save position when pausing
         this.saveReadingPosition();
     }
 
-    splitTextIntoChunks(text, maxChunkSize = 4500) {
-        if (text.length <= maxChunkSize) {
-            return [text];
-        }
-
-        const chunks = [];
-        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-        let currentChunk = '';
-
-        for (const sentence of sentences) {
-            const trimmedSentence = sentence.trim();
-
-            if (trimmedSentence.length > maxChunkSize) {
-                if (currentChunk) {
-                    chunks.push(currentChunk.trim());
-                    currentChunk = '';
-                }
-
-                const words = trimmedSentence.split(' ');
-                let wordChunk = '';
-
-                for (const word of words) {
-                    if ((wordChunk + ' ' + word).length > maxChunkSize) {
-                        if (wordChunk) {
-                            chunks.push(wordChunk.trim());
-                        }
-                        wordChunk = word;
-                    } else {
-                        wordChunk += (wordChunk ? ' ' : '') + word;
-                    }
-                }
-
-                if (wordChunk) {
-                    currentChunk = wordChunk;
-                }
-            } else if ((currentChunk + ' ' + trimmedSentence).length > maxChunkSize) {
-                if (currentChunk) {
-                    chunks.push(currentChunk.trim());
-                }
-                currentChunk = trimmedSentence;
-            } else {
-                currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
-            }
-        }
-
-        if (currentChunk) {
-            chunks.push(currentChunk.trim());
-        }
-
-        return chunks.length > 0 ? chunks : [text];
-    }
+    // Note: splitTextIntoChunks has been moved to AudioPlaybackManager
 
     async speak(text, isNewParagraph = true) {
         if (this.isLoadingAudio) return;
@@ -976,8 +1417,8 @@ class BookReader {
                                 throw new Error('Audio not found');
                             }
                         } catch (error) {
-                            console.log(`⚠️ No pre-generated audio for chunk ${chapterChunkIndex}, using on-demand TTS`);
-                            await this.speakWithOnDemandTTS(text, isNewParagraph);
+                            console.log(`⚠️ No pre-generated audio for chunk ${chapterChunkIndex}, using robust audio manager`);
+                            await this.audioManager.speak(text, isNewParagraph);
                             return;
                         }
                     }
@@ -1015,8 +1456,8 @@ class BookReader {
                 }
             }
 
-            // Fall back to on-demand TTS
-            await this.speakWithOnDemandTTS(text, isNewParagraph);
+            // Fall back to robust audio manager
+            await this.audioManager.speak(text, isNewParagraph);
 
         } catch (error) {
             console.error('Speech synthesis error:', error);
@@ -1130,110 +1571,8 @@ class BookReader {
         }
     }
 
-    async speakWithOnDemandTTS(text, isNewParagraph = true) {
-        // Reset chapter chunk tracking when using on-demand TTS
-        this.currentChapterChunkIndex = -1;
-
-        if (isNewParagraph) {
-            this.currentChunks = this.splitTextIntoChunks(text);
-            this.currentChunkIndex = 0;
-            this.nextAudio = null; // Clear prefetched audio for new paragraph
-        }
-
-        const chunk = this.currentChunks[this.currentChunkIndex];
-        const settings = storage.getSettings();
-        const voiceId = settings.voiceId || 'en-US-Standard-A';
-        const speed = settings.speed || 1.0;
-        const pitch = settings.pitch || 0;
-
-        const cacheKey = `${voiceId}-${speed}-${pitch}-${chunk.substring(0, 50)}`;
-
-        // Use prefetched audio if available (gapless playback!)
-        let audioContent;
-        if (this.nextAudio) {
-            console.log('🎵 Using prefetched audio for gapless playback');
-            if (this.currentAudio) {
-                this.currentAudio.pause();
-            }
-            this.currentAudio = this.nextAudio;
-            this.nextAudio = null;
-        } else {
-            // Fetch current chunk audio
-            if (this.audioCache.has(cacheKey)) {
-                audioContent = this.audioCache.get(cacheKey);
-            } else {
-                const result = await ttsApi.synthesize(chunk, voiceId, speed, pitch);
-                audioContent = result.audioContent;
-
-                this.trackUsage(result.characterCount);
-
-                if (this.audioCache.size > 20) {
-                    const firstKey = this.audioCache.keys().next().value;
-                    this.audioCache.delete(firstKey);
-                }
-                this.audioCache.set(cacheKey, audioContent);
-            }
-
-            if (this.currentAudio) {
-                this.currentAudio.pause();
-            }
-
-            this.currentAudio = ttsApi.createAudioElement(audioContent);
-        }
-
-        // Prefetch next chunk while current plays (for gapless playback!)
-        if (this.currentChunkIndex < this.currentChunks.length - 1) {
-            const nextChunk = this.currentChunks[this.currentChunkIndex + 1];
-            const nextCacheKey = `${voiceId}-${speed}-${pitch}-${nextChunk.substring(0, 50)}`;
-
-            // Prefetch asynchronously (don't wait)
-            (async () => {
-                try {
-                    let nextAudioContent;
-                    if (this.audioCache.has(nextCacheKey)) {
-                        nextAudioContent = this.audioCache.get(nextCacheKey);
-                    } else {
-                        const result = await ttsApi.synthesize(nextChunk, voiceId, speed, pitch);
-                        nextAudioContent = result.audioContent;
-                        this.trackUsage(result.characterCount);
-
-                        if (this.audioCache.size > 20) {
-                            const firstKey = this.audioCache.keys().next().value;
-                            this.audioCache.delete(firstKey);
-                        }
-                        this.audioCache.set(nextCacheKey, nextAudioContent);
-                    }
-
-                    // Create audio element and preload it
-                    this.nextAudio = ttsApi.createAudioElement(nextAudioContent);
-                    this.nextAudio.load(); // Preload for instant playback
-                    console.log('✅ Prefetched next chunk for gapless playback');
-                } catch (error) {
-                    console.error('Failed to prefetch next chunk:', error);
-                    this.nextAudio = null;
-                }
-            })();
-        }
-
-        this.currentAudio.onended = () => {
-            if (this.isPlaying) {
-                if (this.currentChunkIndex < this.currentChunks.length - 1) {
-                    this.currentChunkIndex++;
-                    this.speak(text, false);
-                } else {
-                    this.nextParagraph();
-                }
-            }
-        };
-
-        this.currentAudio.onerror = (error) => {
-            console.error('Audio playback error:', error);
-            this.pause();
-            alert('Error playing audio. Please try again.');
-        };
-
-        await this.currentAudio.play();
-    }
+    // Note: speakWithOnDemandTTS has been replaced by AudioPlaybackManager
+    // for robust mobile playback with retry logic, visibility handling, and gapless playback
 
     async checkForExistingChapterAudio(chapterIndex) {
         // Only check if we have book backend ID and are authenticated
